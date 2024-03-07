@@ -1,6 +1,7 @@
 #include <madrona/viz/viewer.hpp>
 #include <madrona/render/render_mgr.hpp>
 #include <madrona/window.hpp>
+#include <madrona/py/bindings.hpp>
 
 #include "sim.hpp"
 #include "mgr.hpp"
@@ -12,88 +13,102 @@
 using namespace madrona;
 using namespace madrona::viz;
 
-int main(int argc, char *argv[])
-{
-    using namespace madWarp;
+namespace nb = nanobind;
 
-    // Read command line arguments
-    uint32_t num_worlds = 1;
-    if (argc >= 2) {
-        num_worlds = (uint32_t)atoi(argv[1]);
-    }
+namespace madWarp {
 
-    ExecMode exec_mode = ExecMode::CPU;
-    if (argc >= 3) {
-        if (!strcmp("--cpu", argv[2])) {
-            exec_mode = ExecMode::CPU;
-        } else if (!strcmp("--cuda", argv[2])) {
-            exec_mode = ExecMode::CUDA;
-        }
-    }
+struct VisualizerGPUState {
+    WindowManager wm;
+    WindowHandle window;
+    render::GPUHandle renderGPU;
 
-    bool enable_batch_renderer =
-#ifdef MADRONA_MACOS
-        false;
-#else
-        true;
-#endif
+    inline VisualizerGPUState(int64_t window_width,
+                              int64_t window_height,
+                              int gpu_id)
+        : wm(),
+          window(wm.makeWindow("MadWarp", window_width, window_height)),
+          renderGPU(wm.initGPU(gpu_id, { window.get() }))
+    {}
 
-    WindowManager wm {};
-    WindowHandle window = wm.makeWindow("MadWarp", 2730, 1536);
-    render::GPUHandle render_gpu = wm.initGPU(0, { window.get() });
-
-    // Create the simulation manager
-    Manager mgr({
-        .execMode = exec_mode,
-        .gpuID = 0,
-        .numWorlds = num_worlds,
-        .maxEpisodeLength = 500,
-        .enableBatchRenderer = enable_batch_renderer,
-        .extRenderAPI = wm.gpuAPIManager().backend(),
-        .extRenderDev = render_gpu.device(),
-    });
-    mgr.init();
-
-    float camera_move_speed = 10.f;
-
-    math::Vector3 initial_camera_position = { 0, 10, 0 };
-
-    math::Quat initial_camera_rotation =
-        (math::Quat::angleAxis(-math::pi / 2.f, math::up) *
-        math::Quat::angleAxis(-math::pi / 2.f, math::right)).normalize();
-
-
-    // Create the viewer
-    viz::Viewer viewer(mgr.getRenderManager(), window.get(), {
-        .numWorlds = num_worlds,
-        .simTickRate = 20,
-        .cameraMoveSpeed = camera_move_speed,
-        .cameraPosition = initial_camera_position,
-        .cameraRotation = initial_camera_rotation,
-    });
-
-    // Main loop for the viewer
-    viewer.loop(
-    [&mgr](CountT world_idx, const Viewer::UserInput &input)
+    inline VisualizerGPUHandles getGPUHandles()
     {
-        using Key = Viewer::KeyboardKey;
-        if (input.keyHit(Key::R)) {
-            mgr.triggerReset(world_idx);
-        }
-    },
-    [&mgr](CountT world_idx, CountT,
-           const Viewer::UserInput &input)
+        return VisualizerGPUHandles {
+            .renderAPI = wm.gpuAPIManager().backend(),
+            .renderDev = renderGPU.device(),
+        };
+    }
+};
+
+struct Visualizer {
+    Viewer viewer;
+
+    inline Visualizer(VisualizerGPUState &gpu_state, Manager &mgr)
+        : viewer(mgr.getRenderManager(), gpu_state.window.get(), {
+            .numWorlds = mgr.numWorlds(),
+            .simTickRate = 30,
+            .cameraMoveSpeed = 10.f,
+            .cameraPosition = { 0, 10, 0 },
+            .cameraRotation = (
+                Quat::angleAxis(-math::pi / 2.f, math::up) *
+                Quat::angleAxis(-math::pi / 2.f, math::right)).normalize(),
+        })
+    {}
+
+    template <typename Fn>
+    inline void loop(Manager &mgr, Fn &&sim_cb)
     {
-        using Key = Viewer::KeyboardKey;
+        // Main loop for the viewer
+        viewer.loop(
+        [&mgr](CountT world_idx, const Viewer::UserInput &input)
+        {
+            using Key = Viewer::KeyboardKey;
+            if (input.keyHit(Key::R)) {
+                mgr.triggerReset(world_idx);
+            }
+        },
+        [&mgr](CountT world_idx, CountT,
+               const Viewer::UserInput &input)
+        {
+            using Key = Viewer::KeyboardKey;
 
-        int32_t move = 0;
-        if (input.keyPressed(Key::Space)) {
-            move = 1;
-        }
+            int32_t move = 0;
+            if (input.keyPressed(Key::Space)) {
+                move = 1;
+            }
 
-        mgr.setAction(world_idx, move);
-    }, [&]() {
-        mgr.processActions();
-        mgr.postPhysics();
-    }, []() {});
+            mgr.setAction(world_idx, move);
+        }, [&]() {
+            sim_cb();
+        }, []() {});
+    }
+};
+
+NB_MODULE(madrona_warp_proto_viz, m) {
+    nb::class_<VisualizerGPUState>(m, "VisualizerGPUState")
+        .def("__init__", [](VisualizerGPUState *self,
+                            int64_t window_width,
+                            int64_t window_height,
+                            int gpu_id) {
+            new (self) VisualizerGPUState(window_width, window_height, gpu_id);
+        }, nb::arg("window_width"),
+           nb::arg("window_height"),
+           nb::arg("gpu_id") = 0)
+        .def("get_gpu_handles", &VisualizerGPUState::getGPUHandles)
+    ;
+
+    nb::class_<Visualizer>(m, "Visualizer")
+        .def("__init__", [](Visualizer *self,
+                            VisualizerGPUState *viz_gpu_state,
+                            Manager *mgr) {
+            new (self) Visualizer(*viz_gpu_state, *mgr);
+        }, nb::arg("visualizer_gpu_state"),
+           nb::arg("manager"))
+        .def("loop", [](Visualizer *self, Manager *mgr, nb::callable cb) {
+            self->loop(*mgr, [&]() {
+                cb();
+            });
+        })
+    ;
+}
+
 }

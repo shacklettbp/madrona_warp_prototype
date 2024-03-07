@@ -15,14 +15,13 @@ target_link_libraries(madwarp_cpu_impl
         madrona_rendering_system
 )
 
-add_library(madwarp_mgr STATIC
+add_library(madwarp_mgr SHARED
     mgr.hpp mgr.cpp
 )
 
 target_link_libraries(madwarp_mgr 
-    PUBLIC
-        madrona_python_utils
     PRIVATE
+        madrona_python_utils
         madwarp_cpu_impl
         madrona_mw_cpu
         madrona_common
@@ -63,16 +62,16 @@ target_link_libraries(madrona_warp_proto_sim PRIVATE
 )
 
 if (TARGET madrona_viz)
-    add_executable(viewer viewer.cpp)
-    target_link_libraries(viewer PRIVATE
-        madrona_mw_core madwarp_mgr madrona_viz)
+    madrona_python_module(madrona_warp_proto_viz
+        viewer.cpp
+    )
 
-    target_compile_definitions(viewer PRIVATE
-        -DDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../data/"
+    target_link_libraries(madrona_warp_proto_viz PRIVATE 
+        madrona_viz madwarp_mgr
     )
 
     if (TARGET madrona_cuda)
-        target_link_libraries(viewer PRIVATE
+        target_link_libraries(madrona_warp_proto_viz PRIVATE
             madrona_cuda
         )
     endif()

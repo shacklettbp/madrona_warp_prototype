@@ -3,6 +3,8 @@
 #include <madrona/macros.hpp>
 #include <madrona/py/bindings.hpp>
 
+using namespace madrona;
+
 namespace nb = nanobind;
 
 namespace madWarp {
@@ -14,7 +16,9 @@ NB_MODULE(madrona_warp_proto_sim, m) {
     // like madrona::py::Tensor and madrona::py::PyExecMode.
     madrona::py::setupMadronaSubmodule(m);
 
-    nb::class_<Manager> (m, "SimManager")
+    nb::class_<VisualizerGPUHandles>(m, "VisualizerGPUHandles");
+
+    nb::class_<Manager>(m, "SimManager")
         .def("__init__", [](Manager *self,
                             madrona::py::PyExecMode exec_mode,
                             int64_t gpu_id,
@@ -22,7 +26,8 @@ NB_MODULE(madrona_warp_proto_sim, m) {
                             int64_t max_episode_len,
                             bool enable_batch_renderer,
                             int64_t batch_render_view_width,
-                            int64_t batch_render_view_height) {
+                            int64_t batch_render_view_height,
+                            VisualizerGPUHandles *viz_gpu_hdls) {
             new (self) Manager(Manager::Config {
                 .execMode = exec_mode,
                 .gpuID = (int)gpu_id,
@@ -31,14 +36,16 @@ NB_MODULE(madrona_warp_proto_sim, m) {
                 .enableBatchRenderer = enable_batch_renderer,
                 .batchRenderViewWidth = (uint32_t)batch_render_view_width,
                 .batchRenderViewHeight = (uint32_t)batch_render_view_height,
-            });
+            }, viz_gpu_hdls != nullptr ? *viz_gpu_hdls :
+                Optional<VisualizerGPUHandles>::none());
         }, nb::arg("exec_mode"),
            nb::arg("gpu_id"),
            nb::arg("num_worlds"),
            nb::arg("max_episode_length"),
            nb::arg("enable_batch_renderer") = false,
            nb::arg("batch_render_view_width") = 64,
-           nb::arg("batch_render_view_height") = 64)
+           nb::arg("batch_render_view_height") = 64,
+           nb::arg("visualizer_gpu_handles") = nb::none())
         .def("init", &Manager::init)
         .def("process_actions", &Manager::processActions)
         .def("post_physics", &Manager::postPhysics)

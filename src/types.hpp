@@ -17,6 +17,7 @@ using madrona::base::Rotation;
 using madrona::base::Scale;
 using madrona::base::ObjectID;
 using madrona::math::Vector3;
+using madrona::math::Quat;
 
 // WorldReset is a per-world singleton component that causes the current
 // episode to be terminated and the world regenerated

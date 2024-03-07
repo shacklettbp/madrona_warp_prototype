@@ -35,9 +35,10 @@ struct RenderGPUState {
 
 
 static inline Optional<RenderGPUState> initRenderGPUState(
-    const Manager::Config &mgr_cfg)
+    const Manager::Config &mgr_cfg,
+    const Optional<VisualizerGPUHandles> &viz_gpu_hdls)
 {
-    if (mgr_cfg.extRenderDev || !mgr_cfg.enableBatchRenderer) {
+    if (viz_gpu_hdls.has_value() || !mgr_cfg.enableBatchRenderer) {
         return Optional<RenderGPUState>::none();
     }
 
@@ -54,9 +55,10 @@ static inline Optional<RenderGPUState> initRenderGPUState(
 
 static inline Optional<render::RenderManager> initRenderManager(
     const Manager::Config &mgr_cfg,
+    const Optional<VisualizerGPUHandles> &viz_gpu_hdls,
     const Optional<RenderGPUState> &render_gpu_state)
 {
-    if (!mgr_cfg.extRenderDev && !mgr_cfg.enableBatchRenderer) {
+    if (!viz_gpu_hdls.has_value() && !mgr_cfg.enableBatchRenderer) {
         return Optional<render::RenderManager>::none();
     }
 
@@ -67,8 +69,10 @@ static inline Optional<render::RenderManager> initRenderManager(
         render_api = render_gpu_state->apiMgr.backend();
         render_dev = render_gpu_state->gpu.device();
     } else {
-        render_api = mgr_cfg.extRenderAPI;
-        render_dev = mgr_cfg.extRenderDev;
+        assert(viz_gpu_hdls.has_value());
+
+        render_api = viz_gpu_hdls->renderAPI;
+        render_dev = viz_gpu_hdls->renderDev;
     }
 
     return render::RenderManager(render_api, render_dev, {
@@ -128,7 +132,9 @@ struct Manager::Impl {
         TensorElementType type,
         madrona::Span<const int64_t> dimensions) const = 0;
 
-    static inline Impl * make(const Config &cfg);
+    static inline Impl * make(
+        const Config &cfg,
+        const Optional<VisualizerGPUHandles> &viz_gpu_hdls);
 };
 
 struct Manager::CPUImpl final : Manager::Impl {
@@ -154,6 +160,7 @@ struct Manager::CPUImpl final : Manager::Impl {
     inline virtual void init() final
     {
         cpuExec.runTaskGraph(TaskGraphID::Init);
+        renderStep();
     }
 
     inline virtual void processActions() final
@@ -294,7 +301,8 @@ static void loadRenderObjects(render::RenderManager &render_mgr)
 }
 
 Manager::Impl * Manager::Impl::make(
-    const Manager::Config &mgr_cfg)
+    const Manager::Config &mgr_cfg,
+    const Optional<VisualizerGPUHandles> &viz_gpu_hdls)
 {
     Sim::Config sim_cfg;
     sim_cfg.maxStepsPerEpisode = mgr_cfg.maxEpisodeLength;
@@ -305,10 +313,10 @@ Manager::Impl * Manager::Impl::make(
         CUcontext cu_ctx = MWCudaExecutor::initCUDA(mgr_cfg.gpuID);
 
         Optional<RenderGPUState> render_gpu_state =
-            initRenderGPUState(mgr_cfg);
+            initRenderGPUState(mgr_cfg, viz_gpu_hdls);
 
         Optional<render::RenderManager> render_mgr =
-            initRenderManager(mgr_cfg, render_gpu_state);
+            initRenderManager(mgr_cfg, viz_gpu_hdls, render_gpu_state);
 
         if (render_mgr.has_value()) {
             loadRenderObjects(*render_mgr);
@@ -355,10 +363,10 @@ Manager::Impl * Manager::Impl::make(
     } break;
     case ExecMode::CPU: {
         Optional<RenderGPUState> render_gpu_state =
-            initRenderGPUState(mgr_cfg);
+            initRenderGPUState(mgr_cfg, viz_gpu_hdls);
 
         Optional<render::RenderManager> render_mgr =
-            initRenderManager(mgr_cfg, render_gpu_state);
+            initRenderManager(mgr_cfg, viz_gpu_hdls, render_gpu_state);
 
         if (render_mgr.has_value()) {
             loadRenderObjects(*render_mgr);
@@ -400,8 +408,9 @@ Manager::Impl * Manager::Impl::make(
     }
 }
 
-Manager::Manager(const Config &cfg)
-    : impl_(Impl::make(cfg))
+Manager::Manager(const Config &cfg,
+                 Optional<VisualizerGPUHandles> viz_gpu_hdls)
+    : impl_(Impl::make(cfg, viz_gpu_hdls))
 {}
 
 Manager::~Manager() {}
@@ -566,6 +575,11 @@ void Manager::setAction(int32_t world_idx,
     } else {
         *action_ptr = action;
     }
+}
+
+uint32_t Manager::numWorlds() const
+{
+    return impl_->cfg.numWorlds;
 }
 
 render::RenderManager & Manager::getRenderManager()

@@ -183,9 +183,9 @@ static void setupInitTasks(TaskGraphBuilder &builder)
     // BVH build above.
     auto sort = queueSortByWorld<RigidBody>(
         builder, {});
-    auto sort = queueSortByWorld<Joint>(
+    sort = queueSortByWorld<Joint>(
         builder, {sort});
-    auto sort = queueSortByWorld<Agent>(
+    sort = queueSortByWorld<Agent>(
         builder, {sort});
 
     // This isn't necessary since we don't delete any entities in this
