@@ -93,7 +93,8 @@ NB_MODULE(madrona_warp_proto_viz, m) {
         }, nb::arg("window_width"),
            nb::arg("window_height"),
            nb::arg("gpu_id") = 0)
-        .def("get_gpu_handles", &VisualizerGPUState::getGPUHandles)
+        .def("get_gpu_handles", &VisualizerGPUState::getGPUHandles, 
+             nb::keep_alive<0, 1>())
     ;
 
     nb::class_<Visualizer>(m, "Visualizer")
@@ -102,7 +103,9 @@ NB_MODULE(madrona_warp_proto_viz, m) {
                             Manager *mgr) {
             new (self) Visualizer(*viz_gpu_state, *mgr);
         }, nb::arg("visualizer_gpu_state"),
-           nb::arg("manager"))
+           nb::arg("manager"),
+           nb::keep_alive<1, 2>(),
+           nb::keep_alive<1, 3>())
         .def("loop", [](Visualizer *self, Manager *mgr, nb::callable cb) {
             self->loop(*mgr, [&]() {
                 cb();

@@ -45,7 +45,8 @@ NB_MODULE(madrona_warp_proto_sim, m) {
            nb::arg("enable_batch_renderer") = false,
            nb::arg("batch_render_view_width") = 64,
            nb::arg("batch_render_view_height") = 64,
-           nb::arg("visualizer_gpu_handles") = nb::none())
+           nb::arg("visualizer_gpu_handles") = nb::none(),
+           nb::keep_alive<1, 9>())
         .def("init", &Manager::init)
         .def("process_actions", &Manager::processActions)
         .def("post_physics", &Manager::postPhysics)

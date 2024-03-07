@@ -45,7 +45,3 @@ def step_fn():
     sim.post_physics()
 
 visualizer.loop(sim, step_fn)
-
-del visualizer
-del sim
-del viz_gpu_state
