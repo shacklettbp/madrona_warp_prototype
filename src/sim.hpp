@@ -28,6 +28,7 @@ enum class ExportID : uint32_t {
 enum class SimObject : uint32_t {
     Pole,
     Cart,
+    Backdrop,
     NumObjects,
 };
 

@@ -47,10 +47,8 @@ struct Visualizer {
             .numWorlds = mgr.numWorlds(),
             .simTickRate = 30,
             .cameraMoveSpeed = 10.f,
-            .cameraPosition = { 0, 10, 0 },
-            .cameraRotation = (
-                Quat::angleAxis(-math::pi / 2.f, math::up) *
-                Quat::angleAxis(-math::pi / 2.f, math::right)).normalize(),
+            .cameraPosition = { 0, -3, 0 },
+            .cameraRotation = { 1, 0, 0, 0 },
         })
     {}
 

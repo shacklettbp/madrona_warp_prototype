@@ -71,6 +71,17 @@ struct RigidBody : public madrona::Archetype<
     madrona::render::Renderable
 > {};
 
+struct RenderObject : public madrona::Archetype<
+    Position,
+    Rotation,
+    Scale,
+    ObjectID,
+
+    // All entities with the Renderable component will be drawn by the
+    // viewer and batch renderer
+    madrona::render::Renderable
+> {};
+
 struct Agent : public madrona::Archetype<
     Position, // Note position / rotation is for the camera
     Rotation,

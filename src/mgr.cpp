@@ -270,6 +270,8 @@ static void loadRenderObjects(render::RenderManager &render_mgr)
         (std::filesystem::path(DATA_DIR) / "pole_render.obj").string();
     render_asset_paths[(size_t)SimObject::Cart] =
         (std::filesystem::path(DATA_DIR) / "cart_render.obj").string();
+    render_asset_paths[(size_t)SimObject::Backdrop] =
+        (std::filesystem::path(DATA_DIR) / "plane.obj").string();
 
     std::array<const char *, (size_t)SimObject::NumObjects> render_asset_cstrs;
     for (size_t i = 0; i < render_asset_paths.size(); i++) {
@@ -287,11 +289,13 @@ static void loadRenderObjects(render::RenderManager &render_mgr)
     auto materials = std::to_array<imp::SourceMaterial>({
         { render::rgb8ToFloat(191, 108, 10), -1, 0.8f, 0.2f },
         { render::rgb8ToFloat(230, 230, 20), -1, 0.8f, 1.0f },
+        { render::rgb8ToFloat(180, 180, 180), -1, 0.8f, 1.0f },
     });
 
     // Override materials
     render_assets->objects[(CountT)SimObject::Pole].meshes[0].materialIDX = 0;
     render_assets->objects[(CountT)SimObject::Cart].meshes[0].materialIDX = 1;
+    render_assets->objects[(CountT)SimObject::Backdrop].meshes[0].materialIDX = 2;
 
     render_mgr.loadObjects(render_assets->objects, materials, {});
 

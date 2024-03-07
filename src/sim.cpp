@@ -27,6 +27,7 @@ void Sim::registerTypes(ECSRegistry &registry, const Config &cfg)
 
     registry.registerArchetype<Joint>();
     registry.registerArchetype<RigidBody>();
+    registry.registerArchetype<RenderObject>();
     registry.registerArchetype<Agent>();
 
     registry.exportSingleton<WorldReset>(
@@ -47,8 +48,8 @@ void Sim::registerTypes(ECSRegistry &registry, const Config &cfg)
         (uint32_t)ExportID::JointForces);
 }
 
-inline void actionsSystem(Engine &ctx,
-                          Action action)
+inline void actionSystem(Engine &ctx,
+                         Action action)
 {
     JointForce &joint_force = ctx.get<JointForce>(ctx.data().joint);
     if (action.move == 1) {
@@ -104,7 +105,7 @@ inline void checkEpisodeFinishedSystem(Engine &ctx,
 static inline void initState(Engine &ctx)
 {
     Entity agent = ctx.data().agent;
-    ctx.get<Position>(agent) = Vector3 { 0, 10.f, 0.5f };
+    ctx.get<Position>(agent) = Vector3 { 0, -3, 0 };
     ctx.get<Rotation>(agent) = Quat { 1, 0, 0, 0 };
 
     Entity cart = ctx.data().cart;
@@ -183,6 +184,8 @@ static void setupInitTasks(TaskGraphBuilder &builder)
     // BVH build above.
     auto sort = queueSortByWorld<RigidBody>(
         builder, {});
+    sort = queueSortByWorld<RenderObject>(
+        builder, {sort});
     sort = queueSortByWorld<Joint>(
         builder, {sort});
     sort = queueSortByWorld<Agent>(
@@ -204,7 +207,7 @@ static void setupInitTasks(TaskGraphBuilder &builder)
 static void setupProcessActionsTasks(TaskGraphBuilder &builder)
 {
     builder.addToGraph<ParallelForNode<Engine,
-        actionsSystem,
+        actionSystem,
             Action
         >>({});
 }
@@ -252,7 +255,7 @@ Sim::Sim(Engine &ctx,
     ctx.get<Scale>(agent) = Diag3x3 { 1, 1, 1 };
     ctx.get<Action>(agent).move = 0;
     render::RenderingSystem::attachEntityToView(
-        ctx, agent, 100.f, 0.001f, Vector3::zero());
+        ctx, agent, 60.f, 0.001f, Vector3::zero());
 
     cart = ctx.makeRenderableEntity<RigidBody>();
     ctx.get<Scale>(cart) = Diag3x3 { 1, 1, 1 };
@@ -264,6 +267,12 @@ Sim::Sim(Engine &ctx,
 
     joint = ctx.makeEntity<Joint>();
     ctx.get<JointForce>(joint) = { 0 };
+
+    Entity backdrop = ctx.makeRenderableEntity<RenderObject>();
+    ctx.get<Position>(backdrop) = Vector3 { 0, 10, 0 };
+    ctx.get<Rotation>(backdrop) = Quat::angleAxis(math::pi / 2.f, math::right);
+    ctx.get<Scale>(backdrop) = Diag3x3 { 1, 1, 1 };
+    ctx.get<ObjectID>(backdrop) = ObjectID { (int32_t)SimObject::Backdrop };
 
     initState(ctx);
 }
