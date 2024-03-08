@@ -62,23 +62,23 @@ class Simulator:
         self.env_cartpole.step()
         
         #print("self.madrona.rigid_body_positions_tensor()=",self.madrona.rigid_body_positions_tensor())
-        positions = wp.from_dlpack(self.madrona.rigid_body_positions_tensor())
-        #orientations = wp.from_dlpack(self.madrona.rigid_body_rotations_tensor)
+        positions = wp.from_dlpack(self.madrona.rigid_body_positions_tensor().to_torch())
+        orientations = wp.from_dlpack(self.madrona.rigid_body_rotations_tensor().to_torch())
         
         #compute_transforms(...)
-        #wp.launch(
-        #    compute_transforms,
-        #    dim=self.env_cartpole.num_envs,
-        #    inputs=[
-        #        self.env_cartpole.model.body_shape,
-        #        self.env_cartpole.model.shape_transform,
-        #        self.env_cartpole.state.body_q,
-        #    ],
-        #    outputs=[
-        #        positions,
-        #        orientations,
-        #    ],
-        #)
+        wp.launch(
+            compute_transforms,
+            dim=self.env_cartpole.num_envs,
+            inputs=[
+                self.env_cartpole.model.body_shapes,
+                self.env_cartpole.model.shape_transform,
+                self.env_cartpole.state.body_q,
+            ],
+            outputs=[
+                positions,
+                orientations,
+            ],
+        )
 
         #optional
         self.env_cartpole.render()
