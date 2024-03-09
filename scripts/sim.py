@@ -2,6 +2,8 @@ from madrona_warp_proto_sim import SimManager, madrona
 from warp_envs.env_cartpole import CartpoleEnvironment
 from warp_envs.environment import RenderMode
 import warp as wp
+import math
+
 wp.init()
 
 @wp.kernel
@@ -55,6 +57,11 @@ class Simulator:
         self.depth = self.madrona.depth_tensor().to_torch()
         self.rgb = self.madrona.rgb_tensor().to_torch()
 
+        self.madrona_rigid_body_positions = self.madrona.rigid_body_positions_tensor().to_torch()
+        self.madrona_rigid_body_rotations = self.madrona.rigid_body_rotations_tensor().to_torch()
+
+        self.step_idx = 0
+
     def step(self):
         self.madrona.process_actions()
 
@@ -62,9 +69,9 @@ class Simulator:
         self.env_cartpole.step()
         
         #print("self.madrona.rigid_body_positions_tensor()=",self.madrona.rigid_body_positions_tensor())
-        positions = wp.from_torch(self.madrona.rigid_body_positions_tensor().to_torch(),dtype=wp.vec3)
-        orientations = wp.from_torch(self.madrona.rigid_body_rotations_tensor().to_torch(), dtype=wp.quatf)
-        
+        positions = wp.from_torch(self.madrona_rigid_body_positions, dtype=wp.vec3)
+        orientations = wp.from_torch(self.madrona_rigid_body_rotations, dtype=wp.quatf)
+
         positions = positions.reshape((positions.shape[0]*positions.shape[1]))
         orientations = orientations.reshape((orientations.shape[0]*orientations.shape[1]))
         #print("positions=",positions)
@@ -86,7 +93,17 @@ class Simulator:
             ],
         )
 
+        self.madrona_rigid_body_positions[..., 0] = 0
+        self.madrona_rigid_body_positions[..., 1] = 0
+        self.madrona_rigid_body_positions[..., 2] = math.sin(self.step_idx / math.pi)
+
+        self.madrona_rigid_body_rotations[..., 0] = 1
+        self.madrona_rigid_body_rotations[..., 1] = 0
+        self.madrona_rigid_body_rotations[..., 2] = 0
+        self.madrona_rigid_body_rotations[..., 3] = 0
         #optional
-        self.env_cartpole.render()
+        #self.env_cartpole.render()
 
         self.madrona.post_physics()
+
+        self.step_idx += 1
