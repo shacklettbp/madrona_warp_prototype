@@ -51,6 +51,7 @@ class CartpoleEnvironment(Environment):
             limit_ke=1.0e4,
             limit_kd=1.0e1,
             enable_self_collisions=False,
+            collapse_fixed_joints=True,
         )
 
         # joint initial positions
