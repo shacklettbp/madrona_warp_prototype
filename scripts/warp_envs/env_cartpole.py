@@ -37,7 +37,7 @@ class CartpoleEnvironment(Environment):
 
     def create_articulation(self, builder):
         wp.sim.parse_urdf(
-            os.path.join(os.path.dirname(__file__), "../assets/cartpole_single.urdf"),
+            os.path.join(os.path.dirname(__file__), "../assets/cartpole_madrona.urdf"),
             builder,
             xform=wp.transform((0.0, 0.0, 0.0), wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), -math.pi * 0.5)),
             floating=False,
