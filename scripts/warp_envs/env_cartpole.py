@@ -34,12 +34,14 @@ class CartpoleEnvironment(Environment):
     activate_ground_plane = False
 
     show_joints = True
+    up_axis = "y"
 
     def create_articulation(self, builder):
         wp.sim.parse_urdf(
-            os.path.join(os.path.dirname(__file__), "../assets/cartpole_madrona.urdf"),
+            os.path.join(os.path.dirname(__file__), "../assets/cartpole_single.urdf"),
             builder,
-            xform=wp.transform((0.0, 0.0, 0.0), wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), -math.pi * 0.5)),
+            #xform=wp.transform((0.0, 0.0, 0.0), wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), -math.pi * 0.5)),
+
             floating=False,
             armature=0.1,
             stiffness=0.0,
@@ -58,7 +60,8 @@ class CartpoleEnvironment(Environment):
         builder.joint_q[-2:] = [0.0, 0.3 ]
 
         builder.joint_target[:2] = [ 0.0, 0.0]
-
+        builder.gravity = [0.,0.,-9.81]
+        builder.up_vector = [0.,0.,1.0]
 
 if __name__ == "__main__":
     run_env(CartpoleEnvironment)
