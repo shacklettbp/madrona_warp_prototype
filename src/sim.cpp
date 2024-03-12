@@ -132,7 +132,7 @@ inline void resetSystem(Engine &ctx, WorldReset &reset)
     int32_t done = ctx.get<Done>(ctx.data().agent).isDone;
 
     if (force_reset == 1 || done == 1) {
-        initState(ctx);
+        //initState(ctx);
     }
 }
 

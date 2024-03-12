@@ -88,33 +88,29 @@ class Simulator:
         #print("orientations=",orientations)
         
         
-        if 1:
-          wp.launch(
-            compute_transforms,
-            dim=self.env_cartpole.model.shape_count,
+        wp.launch(
+          compute_transforms,
+          dim=self.env_cartpole.model.shape_count,
 
-            inputs=[
-                self.env_cartpole.model.shape_body,
-                self.env_cartpole.model.shape_transform,
-                self.env_cartpole.state.body_q,
-                (self.env_cartpole.model.shape_count - 1) // self.env_cartpole.num_envs,
-            ],
-            outputs=[
-                positions,
-                orientations,
-            ],
-          )
-        if 0:
-            self.madrona_rigid_body_positions[..., 0] = 0
-            self.madrona_rigid_body_positions[..., 1] = 0
-            self.madrona_rigid_body_positions[..., 2] = math.sin(self.step_idx / math.pi)
+          inputs=[
+              self.env_cartpole.model.shape_body,
+              self.env_cartpole.model.shape_transform,
+              self.env_cartpole.state.body_q,
+              (self.env_cartpole.model.shape_count - 1) // self.env_cartpole.num_envs,
+          ],
+          outputs=[
+              positions,
+              orientations,
+          ],
+        )
 
-            self.madrona_rigid_body_rotations[..., 0] = 1
-            self.madrona_rigid_body_rotations[..., 1] = 0
-            self.madrona_rigid_body_rotations[..., 2] = 0
-            self.madrona_rigid_body_rotations[..., 3] = 0
-            #optional
-            #self.env_cartpole.render()
+        #wp.synchronize()
+
+        #print("")
+        #print(positions)
+        #print(orientations)
+        #print("")
+
         #print("positions=",positions)
         #print("orientations=",orientations)
 
