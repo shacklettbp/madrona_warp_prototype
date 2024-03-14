@@ -2,6 +2,8 @@ from madrona_warp_proto_sim import SimManager, madrona
 from warp_envs.env_cartpole import CartpoleEnvironment
 from warp_envs.environment import RenderMode
 import warp as wp
+import math
+
 wp.init()
 
 @wp.kernel
@@ -9,12 +11,18 @@ def compute_transforms(
     shape_body: wp.array(dtype=int),
     shape_transforms: wp.array(dtype=wp.transform),
     body_q: wp.array(dtype=wp.transform),
+    num_shapes_per_env: int,
     # outputs
-    out_positions: wp.array(dtype=wp.vec3),
-    out_rotations: wp.array(dtype=wp.quat),
+    out_positions: wp.array(dtype=wp.vec3, ndim=2),
+    out_rotations: wp.array(dtype=wp.quat, ndim=2),
 ):
     tid = wp.tid()
     i = shape_body[tid]
+    env_id = tid // num_shapes_per_env
+    #wp.printf("env_id=%i\n",env_id)
+
+    env_shape_id = tid % num_shapes_per_env
+    #wp.printf("env_shape_id=%i\n",env_shape_id)
     X_ws = shape_transforms[i]
     if shape_body:
         body = shape_body[i]
@@ -23,10 +31,12 @@ def compute_transforms(
                 X_ws = body_q[body] * X_ws
             else:
                 return
-    p = wp.transform_get_translation(X_ws)
-    q = wp.transform_get_rotation(X_ws)
-    out_positions[tid] = p
-    out_rotations[tid] = wp.quat(q[3], q[0], q[1], q[2])
+    pp = wp.transform_get_translation(X_ws)
+    qq = wp.transform_get_rotation(X_ws)
+    #wp.printf("pp=%f %f %f\n", pp[0],pp[1],pp[2])
+    out_rotations[env_id, env_shape_id] = wp.quat(qq[3], qq[0], qq[1], qq[2])
+    out_positions[env_id, env_shape_id] = pp
+
 
 class Simulator:
     def __init__(self, gpu_id, num_worlds, cpu_madrona, viz_gpu_hdls=None):
@@ -34,7 +44,7 @@ class Simulator:
         
         CartpoleEnvironment.render_mode = RenderMode.NONE
         CartpoleEnvironment.num_envs = num_worlds
-        
+        CartpoleEnvironment.env_offset = (0.0, 0.0, 0.0)
         self.env_cartpole = CartpoleEnvironment()
         self.env_cartpole.init()
         self.env_cartpole.reset()
@@ -55,38 +65,55 @@ class Simulator:
         self.depth = self.madrona.depth_tensor().to_torch()
         self.rgb = self.madrona.rgb_tensor().to_torch()
 
+        self.madrona_rigid_body_positions = self.madrona.rigid_body_positions_tensor().to_torch()
+        self.madrona_rigid_body_rotations = self.madrona.rigid_body_rotations_tensor().to_torch()
+
+        self.step_idx = 0
+
     def step(self):
         self.madrona.process_actions()
 
         # Warp here
         self.env_cartpole.step()
-        
+        self.env_cartpole.render()        
         #print("self.madrona.rigid_body_positions_tensor()=",self.madrona.rigid_body_positions_tensor())
-        positions = wp.from_torch(self.madrona.rigid_body_positions_tensor().to_torch(),dtype=wp.vec3)
-        orientations = wp.from_torch(self.madrona.rigid_body_rotations_tensor().to_torch(), dtype=wp.quatf)
-        
-        positions = positions.reshape((positions.shape[0]*positions.shape[1]))
-        orientations = orientations.reshape((orientations.shape[0]*orientations.shape[1]))
+        positions = wp.from_torch(self.madrona_rigid_body_positions, dtype=wp.vec3)
+        orientations = wp.from_torch(self.madrona_rigid_body_rotations, dtype=wp.quatf)
+
+        #positions = positions.reshape((positions.shape[0]*positions.shape[1]))
+        #print("orientations=",orientations)
+        #orientations = orientations.reshape((orientations.shape[0]*orientations.shape[1]))
         #print("positions=",positions)
         #print("positions.shape=", positions.shape)
         #print("orientations=",orientations)
         
         
         wp.launch(
-            compute_transforms,
-            dim=self.env_cartpole.num_envs,
-            inputs=[
-                self.env_cartpole.model.shape_body,
-                self.env_cartpole.model.shape_transform,
-                self.env_cartpole.state.body_q,
-            ],
-            outputs=[
-                positions,
-                orientations,
-            ],
+          compute_transforms,
+          dim=self.env_cartpole.model.shape_count,
+
+          inputs=[
+              self.env_cartpole.model.shape_body,
+              self.env_cartpole.model.shape_transform,
+              self.env_cartpole.state.body_q,
+              (self.env_cartpole.model.shape_count - 1) // self.env_cartpole.num_envs,
+          ],
+          outputs=[
+              positions,
+              orientations,
+          ],
         )
 
-        #optional
-        self.env_cartpole.render()
+        #wp.synchronize()
+
+        #print("")
+        #print(positions)
+        #print(orientations)
+        #print("")
+
+        #print("positions=",positions)
+        #print("orientations=",orientations)
 
         self.madrona.post_physics()
+
+        self.step_idx += 1

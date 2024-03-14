@@ -104,10 +104,6 @@ inline void checkEpisodeFinishedSystem(Engine &ctx,
     
 static inline void initState(Engine &ctx)
 {
-    Entity agent = ctx.data().agent;
-    ctx.get<Position>(agent) = Vector3 { 0, -3, 0 };
-    ctx.get<Rotation>(agent) = Quat { 1, 0, 0, 0 };
-
     Entity cart = ctx.data().cart;
     ctx.get<Position>(cart) = Vector3::zero();
     ctx.get<Rotation>(cart) = Quat { 1, 0, 0, 0 };
@@ -132,7 +128,7 @@ inline void resetSystem(Engine &ctx, WorldReset &reset)
     int32_t done = ctx.get<Done>(ctx.data().agent).isDone;
 
     if (force_reset == 1 || done == 1) {
-        initState(ctx);
+        //initState(ctx);
     }
 }
 
@@ -180,8 +176,6 @@ static void setupResetAndObservationsTasks(TaskGraphBuilder &builder,
 static void setupInitTasks(TaskGraphBuilder &builder)
 {
 #ifdef MADRONA_GPU_MODE
-    // Sort entities, this could be conditional on reset like the second
-    // BVH build above.
     auto sort = queueSortByWorld<RigidBody>(
         builder, {});
     sort = queueSortByWorld<RenderObject>(
@@ -252,8 +246,11 @@ Sim::Sim(Engine &ctx,
     RenderingSystem::init(ctx, cfg.renderBridge);
 
     agent = ctx.makeEntity<Agent>();
+    ctx.get<Position>(agent) = Vector3 { 0, -3, 0 };
+    ctx.get<Rotation>(agent) = Quat { 1, 0, 0, 0 };
     ctx.get<Scale>(agent) = Diag3x3 { 1, 1, 1 };
     ctx.get<Action>(agent).move = 0;
+
     render::RenderingSystem::attachEntityToView(
         ctx, agent, 60.f, 0.001f, Vector3::zero());
 
