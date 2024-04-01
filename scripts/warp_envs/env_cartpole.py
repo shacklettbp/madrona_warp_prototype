@@ -19,7 +19,7 @@ import math
 import warp as wp
 import warp.sim
 
-from .environment import Environment, run_env
+from environment import Environment, run_env
 
 
 class CartpoleEnvironment(Environment):
@@ -40,16 +40,15 @@ class CartpoleEnvironment(Environment):
         wp.sim.parse_urdf(
             os.path.join(os.path.dirname(__file__), "../assets/cartpole_single.urdf"),
             builder,
-            #xform=wp.transform((0.0, 0.0, 0.0), wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), -math.pi * 0.5)),
-
+            # xform=wp.transform((0.0, 0.0, 0.0), wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), -math.pi * 0.5)),
             floating=False,
             armature=0.1,
             stiffness=0.0,
             damping=0.0,
-            shape_ke=1.0e4,
-            shape_kd=1.0e2,
-            shape_kf=1.0e2,
-            shape_mu=1.0,
+            contact_ke=1.0e4,
+            contact_kd=1.0e2,
+            contact_kf=1.0e2,
+            contact_mu=1.0,
             limit_ke=1.0e4,
             limit_kd=1.0e1,
             enable_self_collisions=False,
@@ -57,11 +56,10 @@ class CartpoleEnvironment(Environment):
         )
 
         # joint initial positions
-        builder.joint_q[-2:] = [0.0, 0.3 ]
+        builder.joint_q[-2:] = [0.0, 0.3]
+        builder.gravity = [0.0, 0.0, -9.81]
+        builder.up_vector = [0.0, 0.0, 1.0]
 
-        builder.joint_target[:2] = [ 0.0, 0.0]
-        builder.gravity = [0.,0.,-9.81]
-        builder.up_vector = [0.,0.,1.0]
 
 if __name__ == "__main__":
     run_env(CartpoleEnvironment)
