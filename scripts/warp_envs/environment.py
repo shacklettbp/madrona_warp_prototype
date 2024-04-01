@@ -124,7 +124,7 @@ class Environment:
     # whether to apply model.joint_q, joint_qd to bodies before simulating
     eval_fk: bool = True
 
-    use_graph_capture: bool = wp.get_preferred_device().is_cuda
+    use_graph_capture = False #bool = wp.get_preferred_device().is_cuda
 
     activate_ground_plane: bool = True
 

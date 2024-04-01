@@ -121,6 +121,10 @@ class MadWarpCartpoleCamera(VecEnv):
         self.sim = Simulator(gpu_id, num_envs, use_cpu_sim)
 
         self.num_obs = 4  # pole, cart position, pole cart velocity
+        self.num_actions = 1
+        self.num_privileged_obs = 0
+        self.max_episode_length = 500
+        self.privileged_obs_buf = None
         self.device = "cuda"
 
         # allocate buffers
@@ -141,6 +145,7 @@ class MadWarpCartpoleCamera(VecEnv):
         # pass
 
         self.extras = {}
+        self.extras["observations"] = {}
 
     def get_observations(self) -> tuple[torch.Tensor, dict]:
         """Return the current observations.
@@ -153,8 +158,8 @@ class MadWarpCartpoleCamera(VecEnv):
             eval_observations,
             dim=self.num_envs,
             inputs=[
-                self.sim.env_cartpole.state.joint_q,
-                self.sim.env_cartpole.state.joint_qd,
+                self.sim.env_cartpole.model.joint_q,#self.sim.env_cartpole.state.joint_q,
+                self.sim.env_cartpole.model.joint_qd,#self.sim.env_cartpole.state.joint_qd,
             ],
             outputs=[wp.from_torch(self.obs_buf)],
         )
@@ -189,7 +194,7 @@ class MadWarpCartpoleCamera(VecEnv):
         # #print("state=",self.state)
         # return np.array(self.state), reward, done, {}
 
-        self.sim.env_cartpole.reset()
+        #self.sim.env_cartpole.reset()
         return self.get_observations()
 
     def step(
@@ -211,9 +216,9 @@ class MadWarpCartpoleCamera(VecEnv):
             eval_rewards,
             dim=self.num_envs,
             inputs=[
-                self.sim.env_cartpole.state.joint_q,
-                self.sim.env_cartpole.state.joint_qd,
-                self.sim.env_cartpole.control.joint_act,
+                self.sim.env_cartpole.model.joint_q, #self.sim.env_cartpole.state.joint_q,
+                self.sim.env_cartpole.model.joint_qd, #self.sim.env_cartpole.state.joint_qd,
+                self.sim.env_cartpole.state.joint_act,#self.sim.env_cartpole.control.joint_act,
             ],
             outputs=[
                 wp.from_torch(self.rew_buf),
@@ -324,6 +329,10 @@ def train():
 
     train_cfg = MadWarpRobotCfgPPO()
     train_cfg_dict = class_to_dict(train_cfg)
+    train_cfg_dict["policy"]["class_name"] = "PPO"
+    train_cfg_dict["algorithm"]["class_name"] = "PPO"
+    
+    
     num_envs = 100
     env = MadWarpCartpoleCamera(num_envs)  # warp_rls_cartpole_env.WarpCartpoleEnv()
 
