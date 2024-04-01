@@ -16,6 +16,8 @@ import warp as wp
 import warp.sim
 import warp.sim.render
 
+from tqdm import trange
+
 wp.init()
 
 
@@ -31,6 +33,7 @@ class RenderMode(Enum):
 class IntegratorType(Enum):
     EULER = "euler"
     XPBD = "xpbd"
+    FEATHERSTONE = "featherstone"
 
     def __str__(self):
         return self.value
@@ -77,12 +80,28 @@ def compute_env_offsets(num_envs, env_offset=(5.0, 0.0, 5.0), up_axis="Y"):
     return env_offsets
 
 
+@wp.kernel
+def assign_joint_q_qd_obs(
+    joint_q: wp.array(dtype=float),
+    joint_qd: wp.array(dtype=float),
+    dof_q_per_env: int,
+    dof_qd_per_env: int,
+    obs: wp.array(dtype=float, ndim=2),
+):
+    tid = wp.tid()
+    for i in range(dof_q_per_env):
+        obs[tid, i] = joint_q[tid * dof_q_per_env + i]
+    for i in range(dof_qd_per_env):
+        obs[tid, i + dof_q_per_env] = joint_qd[tid * dof_qd_per_env + i]
+
+
 class Environment:
     sim_name: str = "Environment"
 
     frame_dt = 1.0 / 60.0
 
     episode_duration = 5.0  # seconds
+    episode_frames = None  # number of steps per episode, if None, use episode_duration / frame_dt
 
     # whether to play the simulation indefinitely when using the OpenGL renderer
     continuous_opengl_render: bool = True
@@ -105,11 +124,7 @@ class Environment:
     # whether to apply model.joint_q, joint_qd to bodies before simulating
     eval_fk: bool = True
 
-    profile: bool = False
-
     use_graph_capture: bool = wp.get_preferred_device().is_cuda
-
-    num_envs: int = 100
 
     activate_ground_plane: bool = True
 
@@ -117,14 +132,21 @@ class Environment:
 
     up_axis: str = "Y"
     gravity: float = -9.81
-    env_offset: Tuple[float, float, float] = (1.0, 0.0, 1.0)
 
     # stiffness and damping for joint attachment dynamics used by Euler
     joint_attach_ke: float = 32000.0
     joint_attach_kd: float = 50.0
 
+    # maximum number of rigid contact points to generate per mesh
+    rigid_mesh_contact_max: int = 0  # (0 = unlimited)
+
     # distance threshold at which contacts are generated
     rigid_contact_margin: float = 0.05
+    # whether to iterate over mesh vertices for box/capsule collision
+    rigid_contact_iterate_mesh_vertices: bool = True
+
+    # number of search iterations for finding closest contact points between edges and SDF
+    edge_sdf_iter: int = 10
 
     # whether each environment should have its own collision group
     # to avoid collisions between environments
@@ -133,87 +155,126 @@ class Environment:
     plot_body_coords: bool = False
     plot_joint_coords: bool = False
 
-    requires_grad: bool = False
+    custom_dynamics = None
 
     # control-related definitions, to be updated by derived classes
-    control_dim: int = 0
+    controllable_dofs = []
+    control_gains = []
+    control_limits = []
 
-    def __init__(self):
-        self.parser = argparse.ArgumentParser()
-        self.parser.add_argument(
-            "--integrator",
-            help="Type of integrator",
-            type=IntegratorType,
-            choices=list(IntegratorType),
-            default=self.integrator_type.value,
-        )
-        self.parser.add_argument(
-            "--visualizer",
-            help="Type of renderer",
-            type=RenderMode,
-            choices=list(RenderMode),
-            default=self.render_mode.value,
-        )
-        self.parser.add_argument(
-            "--num_envs", help="Number of environments to simulate", type=int, default=self.num_envs
-        )
-        self.parser.add_argument("--profile", help="Enable profiling", type=bool, default=self.profile)
-
-    def parse_args(self):
-        args = self.parser.parse_args()
-        self.integrator_type = args.integrator
-        self.render_mode = args.visualizer
-        self.num_envs = args.num_envs
-        self.profile = args.profile
-
-    def init(self):
-        if self.integrator_type == IntegratorType.EULER:
-            self.sim_substeps = self.sim_substeps_euler
-        elif self.integrator_type == IntegratorType.XPBD:
-            self.sim_substeps = self.sim_substeps_xpbd
-
-        self.episode_frames = int(self.episode_duration / self.frame_dt)
-        self.sim_dt = self.frame_dt / self.sim_substeps
-        self.sim_steps = int(self.episode_duration / self.sim_dt)
+    def __init__(
+        self,
+        num_envs: int = 100,
+        episode_frames: int = None,
+        integrator_type: IntegratorType = None,
+        render_mode: RenderMode = None,
+        env_offset: Tuple[float, float, float] = (1.0, 0.0, 1.0),
+        device: wp.context.Devicelike = None,
+        requires_grad: bool = False,
+        profile: bool = False,
+        enable_timers: bool = False,
+        use_graph_capture: bool = None,
+    ):
+        self.num_envs = num_envs
+        if episode_frames is not None:
+            self.episode_frames = episode_frames
+        if integrator_type is not None:
+            self.integrator_type = integrator_type
+        if render_mode is not None:
+            self.render_mode = render_mode
+        if use_graph_capture is not None:
+            self.use_graph_capture = use_graph_capture
+        self.device = wp.get_device(device)
+        self.requires_grad = requires_grad
+        self.profile = profile
+        self.enable_timers = enable_timers
 
         if self.use_tiled_rendering and self.render_mode == RenderMode.OPENGL:
             # no environment offset when using tiled rendering
             self.env_offset = (0.0, 0.0, 0.0)
+        else:
+            self.env_offset = env_offset
 
-        builder = wp.sim.ModelBuilder()
+        if isinstance(self.up_axis, str):
+            up_vector = np.zeros(3)
+            up_vector["xyz".index(self.up_axis.lower())] = 1.0
+        else:
+            up_vector = self.up_axis
+        builder = wp.sim.ModelBuilder(up_vector=up_vector, gravity=self.gravity)
+        builder.rigid_mesh_contact_max = self.rigid_mesh_contact_max
         builder.rigid_contact_margin = self.rigid_contact_margin
+        self.env_offsets = compute_env_offsets(self.num_envs, self.env_offset, self.up_axis)
         try:
-            articulation_builder = wp.sim.ModelBuilder()
+            articulation_builder = wp.sim.ModelBuilder(up_vector=up_vector, gravity=self.gravity)
             self.create_articulation(articulation_builder)
-            env_offsets = compute_env_offsets(self.num_envs, self.env_offset, self.up_axis)
-            for i in range(self.num_envs):
-                xform = wp.transform(env_offsets[i], wp.quat_identity())
+            for i in trange(self.num_envs, desc=f"Creating {self.num_envs} environments"):
+                xform = wp.transform(self.env_offsets[i], wp.quat_identity())
                 builder.add_builder(
                     articulation_builder, xform, separate_collision_group=self.separate_collision_group_per_env
                 )
             self.bodies_per_env = len(articulation_builder.body_q)
+            self.dof_q_per_env = articulation_builder.joint_coord_count
+            self.dof_qd_per_env = articulation_builder.joint_dof_count
         except NotImplementedError:
             # custom simulation setup where something other than an articulation is used
             self.setup(builder)
             self.bodies_per_env = len(builder.body_q)
+            self.dof_q_per_env = builder.joint_coord_count
+            self.dof_qd_per_env = builder.joint_dof_count
 
-        self.model = builder.finalize()
+        self.model = builder.finalize(requires_grad=self.requires_grad)
+        self.customize_model(self.model)
         self.device = self.model.device
-        if not self.device.is_cuda:
+        if not self.model.device.is_cuda:
             self.use_graph_capture = False
         self.model.ground = self.activate_ground_plane
 
         self.model.joint_attach_ke = self.joint_attach_ke
         self.model.joint_attach_kd = self.joint_attach_kd
 
-        # set up current and next state to be used by the integrator
-        self.state_0 = None
-        self.state_1 = None
-
         if self.integrator_type == IntegratorType.EULER:
+            self.sim_substeps = self.sim_substeps_euler
             self.integrator = wp.sim.SemiImplicitIntegrator(**self.euler_settings)
         elif self.integrator_type == IntegratorType.XPBD:
+            self.sim_substeps = self.sim_substeps_xpbd
             self.integrator = wp.sim.XPBDIntegrator(**self.xpbd_settings)
+        elif self.integrator_type == IntegratorType.FEATHERSTONE:
+            self.sim_substeps = self.sim_substeps_euler
+            self.integrator = wp.sim.FeatherstoneIntegrator(self.model, **self.euler_settings)
+
+        if self.episode_frames is None:
+            self.episode_frames = int(self.episode_duration / self.frame_dt)
+        self.sim_dt = self.frame_dt / self.sim_substeps
+        self.sim_steps = self.episode_frames * self.sim_substeps
+        self.sim_step = 0
+        self.sim_time = 0.0
+        self.invalidate_cuda_graph = False
+
+        self.controls = []
+        # for _ in range(self.sim_steps):
+        for _ in range(1):
+            control = self.model.control()
+            self.customize_control(control)
+            self.controls.append(control)
+
+        if self.requires_grad:
+            self.states = []
+            for _ in range(self.sim_steps + 1):
+                state = self.model.state()
+                self.customize_state(state)
+                self.states.append(state)
+            self.update = self.update_grad
+        else:
+            # set up current and next state to be used by the integrator
+            self.state_0 = self.model.state()
+            self.state_1 = self.model.state()
+            self.customize_state(self.state_0)
+            self.customize_state(self.state_1)
+            self.update = self.update_nograd
+            if self.use_graph_capture:
+                self.state_temp = self.model.state()
+            else:
+                self.state_temp = None
 
         self.renderer = None
         if self.profile:
@@ -252,13 +313,15 @@ class Environment:
                 **self.usd_render_settings,
             )
 
+    @property
+    def uses_generalized_coordinates(self):
+        # whether the model uses generalized or maximal coordinates (joint q/qd vs body q/qd) in the state
+        return self.integrator_type == IntegratorType.FEATHERSTONE
+
     def create_articulation(self, builder):
         raise NotImplementedError
 
     def setup(self, builder):
-        pass
-
-    def customize_model(self, model):
         pass
 
     def before_simulate(self):
@@ -267,84 +330,217 @@ class Environment:
     def after_simulate(self):
         pass
 
-    def custom_update(self):
+    def before_step(self):
+        pass
+
+    def after_step(self):
+        pass
+
+    def before_update(self):
+        pass
+
+    def after_update(self):
+        pass
+
+    def custom_render(self, render_state, renderer):
         pass
 
     @property
     def state(self):
         # shortcut to current state
+        if self.requires_grad:
+            return self.states[self.sim_step]
         return self.state_0
 
-    def update(self):
+    @property
+    def next_state(self):
+        # shortcut to subsequent state
+        if self.requires_grad:
+            return self.states[self.sim_step + 1]
+        return self.state_1
+
+    @property
+    def control(self):
+        return self.controls[min(len(self.controls) - 1, max(0, (self.sim_step - 1) % self.sim_steps))]
+
+    @property
+    def control_input(self):
+        # points to the actuation input of the control
+        return self.control.joint_act
+
+    def customize_state(self, state: wp.sim.State):
+        pass
+
+    def customize_control(self, control: wp.sim.Control):
+        pass
+
+    def customize_model(self, model):
+        pass
+
+    def compute_cost_termination(
+        self,
+        state: wp.sim.State,
+        control: wp.sim.Control,
+        step: int,
+        traj_length: int,
+        cost: wp.array,
+        terminated: wp.array,
+    ):
+        pass
+
+    @property
+    def control_dim(self):
+        return len(self.controllable_dofs)
+
+    @property
+    def observation_dim(self):
+        # default observation consists of generalized joint positions and velocities
+        return self.dof_q_per_env + self.dof_qd_per_env
+
+    def compute_observations(
+        self, state: wp.sim.State, control: wp.sim.Control, observations: wp.array, step: int, horizon_length: int
+    ):
+        if not self.uses_generalized_coordinates:
+            # evaluate generalized coordinates
+            wp.sim.eval_ik(self.model, state, state.joint_q, state.joint_qd)
+
+        wp.launch(
+            assign_joint_q_qd_obs,
+            dim=self.num_envs,
+            inputs=[state.joint_q, state.joint_qd, self.dof_q_per_env, self.dof_qd_per_env],
+            outputs=[observations],
+            device=self.device,
+        )
+
+    def update_nograd(self):
+        self.before_update()
+        if self.use_graph_capture:
+            state_0_dict = self.state_0.__dict__
+            state_1_dict = self.state_1.__dict__
+            state_temp_dict = self.state_temp.__dict__ if self.state_temp is not None else None
         for i in range(self.sim_substeps):
-            self.state_0.clear_forces()
-            self.custom_update()
-            wp.sim.collide(self.model, self.state_0)
-            self.integrator.simulate(self.model, self.state_0, self.state_1, self.sim_dt)
-            self.state_0, self.state_1 = self.state_1, self.state_0
+            self.before_step()
+            if self.custom_dynamics is not None:
+                self.custom_dynamics(self.model, self.state_0, self.state_1, self.sim_dt, self.control)
+            else:
+                self.state_0.clear_forces()
+                with wp.ScopedTimer("collision_handling", color="orange", active=self.enable_timers):
+                    wp.sim.collide(
+                        self.model,
+                        self.state_0,
+                        edge_sdf_iter=self.edge_sdf_iter,
+                        iterate_mesh_vertices=self.rigid_contact_iterate_mesh_vertices,
+                    )
+                with wp.ScopedTimer("simulation", color="red", active=self.enable_timers):
+                    self.integrator.simulate(self.model, self.state_0, self.state_1, self.sim_dt, self.control)
+            self.after_step()
+            if i < self.sim_substeps - 1 or not self.use_graph_capture:
+                # we can just swap the state references
+                self.state_0, self.state_1 = self.state_1, self.state_0
+            elif self.use_graph_capture:
+                assert (
+                    hasattr(self, "state_temp") and self.state_temp is not None
+                ), "state_temp must be allocated when using graph capture"
+                # swap states by actually copying the state arrays to make sure the graph capture works
+                for key, value in state_0_dict.items():
+                    if isinstance(value, wp.array):
+                        if key not in state_temp_dict:
+                            state_temp_dict[key] = wp.empty_like(value)
+                        state_temp_dict[key].assign(value)
+                        state_0_dict[key].assign(state_1_dict[key])
+                        state_1_dict[key].assign(state_temp_dict[key])
+            self.sim_time += self.sim_dt
+            self.sim_step += 1
+        self.after_update()
+
+    def update_grad(self):
+        self.before_update()
+        for i in range(self.sim_substeps):
+            self.before_step()
+            if self.custom_dynamics is not None:
+                self.custom_dynamics(
+                    self.model,
+                    self.states[self.sim_step],
+                    self.states[self.sim_step + 1],
+                    self.sim_dt,
+                    self.control,
+                )
+            else:
+                self.states[self.sim_step].clear_forces()
+                wp.sim.collide(
+                    self.model,
+                    self.states[self.sim_step],
+                    edge_sdf_iter=self.edge_sdf_iter,
+                    iterate_mesh_vertices=self.rigid_contact_iterate_mesh_vertices,
+                )
+                self.integrator.simulate(
+                    self.model,
+                    self.states[self.sim_step],
+                    self.states[self.sim_step + 1],
+                    self.sim_dt,
+                    self.control,
+                )
+            self.after_step()
+            self.sim_time += self.sim_dt
+            self.sim_step += 1
+        self.after_update()
 
     def render(self, state=None):
         if self.renderer is not None:
-            with wp.ScopedTimer("render", False):
-                self.render_time += self.frame_dt
-                self.renderer.begin_frame(self.render_time)
+            with wp.ScopedTimer("render", color="yellow", active=self.enable_timers):
+                self.renderer.begin_frame(self.sim_time)
                 # render state 1 (swapped with state 0 just before)
-                self.renderer.render(state or self.state_1)
+                if self.requires_grad:
+                    # ensure we do not render beyond the last state
+                    # render_state = state or self.states[min(self.sim_steps, self.sim_step + 1)]
+                    render_state = state or self.states[min(self.sim_steps, self.sim_step)]
+                else:
+                    render_state = state or self.next_state
+                with wp.ScopedTimer("custom_render", color="orange", active=self.enable_timers):
+                    self.custom_render(render_state, renderer=self.renderer)
+                self.renderer.render(render_state)
                 self.renderer.end_frame()
 
     def reset(self):
-        # ---------------
-        # reset simulation
-
         self.sim_time = 0.0
-        self.render_time = 0.0
-        self.state_0 = self.model.state()
-        self.state_1 = self.model.state()
+        self.sim_step = 0
 
         if self.eval_fk:
-            wp.sim.eval_fk(self.model, self.model.joint_q, self.model.joint_qd, None, self.state_0)
+            wp.sim.eval_fk(self.model, self.model.joint_q, self.model.joint_qd, None, self.state)
 
-        self.before_simulate()
-
-        if self.renderer is not None:
-            self.render(self.state_0)
-
-            if self.render_mode == RenderMode.OPENGL:
-                self.renderer.paused = True
-
-        
-
-        if self.use_graph_capture:
-            # create update graph
-            wp.capture_begin()
-            try:
-                self.update()
-            finally:
-                self.graph = wp.capture_end()
-    def step(self):
-        # ---------------
-        # step simulation
-
-        if self.use_graph_capture:
-            wp.capture_launch(self.graph)
-            self.sim_time += self.frame_dt
-        else:
-            self.update()
-            self.sim_time += self.frame_dt
+        if self.model.particle_count > 1:
+            self.model.particle_grid.build(
+                self.state.particle_q,
+                self.model.particle_max_radius * 2.0,
+            )
 
     def run(self):
         # ---------------
         # run simulation
+        self.reset()
+
+        self.before_simulate()
+
+        if self.renderer is not None:
+            self.render(self.state)
+
+            if self.render_mode == RenderMode.OPENGL:
+                self.renderer.paused = True
 
         profiler = {}
 
+        if self.use_graph_capture:
+            with wp.ScopedCapture() as capture:
+                self.update()
+            graph = capture.graph
+
         if self.plot_body_coords:
             q_history = []
-            q_history.append(self.state_0.body_q.numpy().copy())
+            q_history.append(self.state.body_q.numpy().copy())
             qd_history = []
-            qd_history.append(self.state_0.body_qd.numpy().copy())
+            qd_history.append(self.state.body_qd.numpy().copy())
             delta_history = []
-            delta_history.append(self.state_0.body_deltas.numpy().copy())
+            delta_history.append(self.state.body_deltas.numpy().copy())
             num_con_history = []
             num_con_history.append(self.model.rigid_contact_inv_weight.numpy().copy())
         if self.plot_joint_coords:
@@ -353,21 +549,35 @@ class Environment:
             joint_qd = wp.zeros_like(self.model.joint_qd)
 
         # simulate
-        with wp.ScopedTimer("simulate", detailed=False, print=False, active=True, dict=profiler):
+        with wp.ScopedTimer(
+            "run_loop", detailed=False, print=False, active=self.enable_timers or self.profile, dict=profiler
+        ):
             running = True
             while running:
                 for f in range(self.episode_frames):
-                    self.step()
+                    if self.model.particle_count > 1:
+                        self.model.particle_grid.build(
+                            self.state.particle_q,
+                            self.model.particle_max_radius * 2.0,
+                        )
+                    if self.use_graph_capture:
+                        with wp.ScopedTimer("simulation_graph", color="green", active=self.enable_timers):
+                            wp.capture_launch(graph)
+                        self.sim_time += self.frame_dt
+                        self.sim_step += self.sim_substeps
+                    elif not self.requires_grad or self.sim_step < self.sim_steps:
+                        with wp.ScopedTimer("update", color="green", active=self.enable_timers):
+                            self.update()
 
-                    if not self.profile:
+                        if not self.profile:
                             if self.plot_body_coords:
-                                q_history.append(self.state_0.body_q.numpy().copy())
-                                qd_history.append(self.state_0.body_qd.numpy().copy())
-                                delta_history.append(self.state_0.body_deltas.numpy().copy())
+                                q_history.append(self.state.body_q.numpy().copy())
+                                qd_history.append(self.state.body_qd.numpy().copy())
+                                delta_history.append(self.state.body_deltas.numpy().copy())
                                 num_con_history.append(self.model.rigid_contact_inv_weight.numpy().copy())
 
                             if self.plot_joint_coords:
-                                wp.sim.eval_ik(self.model, self.state_0, joint_q, joint_qd)
+                                wp.sim.eval_ik(self.model, self.state, joint_q, joint_qd)
                                 joint_q_history.append(joint_q.numpy().copy())
 
                     self.render()
@@ -382,7 +592,7 @@ class Environment:
 
         self.after_simulate()
 
-        avg_time = np.array(profiler["simulate"]).mean() / self.episode_frames
+        avg_time = np.array(profiler["run_loop"]).mean() / self.episode_frames
         avg_steps_second = 1000.0 * float(self.num_envs) / avg_time
 
         print(f"envs: {self.num_envs} steps/second {avg_steps_second} avg_time {avg_time}")
@@ -436,7 +646,7 @@ class Environment:
                 ax[i, 6].yaxis.get_major_locator().set_params(integer=True)
             plt.show()
 
-        if self.plot_joint_coords:
+        if self.plot_joint_coords and len(joint_q_history) > 0:
             import matplotlib.pyplot as plt
 
             joint_q_history = np.array(joint_q_history)
@@ -473,6 +683,7 @@ class Environment:
             q_start = self.model.joint_q_start.numpy()
             qd_start = self.model.joint_qd_start.numpy()
             qd_i = qd_start[joint_id]
+            num_joint_free = 0  # needed to offset joint_limits, which skip free joint type
             for dim in range(ncols * nrows):
                 ax = axes[dim // ncols, dim % ncols]
                 if dim >= dof_q:
@@ -481,12 +692,14 @@ class Environment:
                 ax.grid()
                 ax.plot(joint_q_history[:, dim])
                 if joint_type[joint_id] != wp.sim.JOINT_FREE:
-                    lower = joint_lower[qd_i]
+                    lower = joint_lower[qd_i - num_joint_free]
                     if abs(lower) < 2 * np.pi:
                         ax.axhline(lower, color="red")
-                    upper = joint_upper[qd_i]
+                    upper = joint_upper[qd_i - num_joint_free]
                     if abs(upper) < 2 * np.pi:
                         ax.axhline(upper, color="red")
+                else:
+                    num_joint_free += 1
                 joint_name = joint_type_names[joint_type[joint_id]]
                 ax.set_title(f"$\\mathbf{{q_{{{dim}}}}}$ ({self.model.joint_name[joint_id]} / {joint_name} {joint_id})")
                 if joint_id < self.model.joint_count - 1 and q_start[joint_id + 1] == dim + 1:
@@ -500,10 +713,32 @@ class Environment:
         return 1000.0 * float(self.num_envs) / avg_time
 
 
-def run_env(Demo):
-    demo = Demo()
-    demo.parse_args()
-    if demo.profile:
+def run_env(Environment):
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--integrator",
+        help="Type of integrator",
+        type=IntegratorType,
+        choices=list(IntegratorType),
+        default=IntegratorType.XPBD.value,
+    )
+    parser.add_argument(
+        "--visualizer",
+        help="Type of renderer",
+        type=RenderMode,
+        choices=list(RenderMode),
+        default=RenderMode.OPENGL.value,
+    )
+    parser.add_argument("--num_envs", help="Number of environments to simulate", type=int, default=100)
+    parser.add_argument("--profile", help="Enable profiling", type=bool, default=False)
+    args = parser.parse_args()
+    env_args = dict(
+        integrator_type=args.integrator,
+        render_mode=args.visualizer,
+        profile=args.profile,
+    )
+
+    if args.profile:
         import matplotlib.pyplot as plt
 
         env_count = 2
@@ -511,8 +746,10 @@ def run_env(Demo):
         env_size = []
 
         for i in range(15):
-            demo.num_envs = env_count
-            demo.init()
+            demo = Environment(
+                num_envs=env_count,
+                **env_args,
+            )
             steps_per_second = demo.run()
 
             env_size.append(env_count)
@@ -533,5 +770,8 @@ def run_env(Demo):
         plt.ylabel("Steps/Second")
         plt.show()
     else:
-        demo.init()
+        demo = Environment(
+            num_envs=args.num_envs,
+            **env_args,
+        )
         return demo.run()
