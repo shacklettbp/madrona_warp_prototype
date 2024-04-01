@@ -514,6 +514,17 @@ class Environment:
                 self.model.particle_max_radius * 2.0,
             )
 
+    def step(self):
+        # ---------------
+        # step simulation
+
+        if self.use_graph_capture:
+            wp.capture_launch(self.graph)
+            self.sim_time += self.frame_dt
+        else:
+            self.update()
+            self.sim_time += self.frame_dt
+
     def run(self):
         # ---------------
         # run simulation
