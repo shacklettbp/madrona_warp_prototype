@@ -33,7 +33,7 @@ def compute_transforms(
                 return
     pp = wp.transform_get_translation(X_ws)
     qq = wp.transform_get_rotation(X_ws)
-    #wp.printf("pp=%f %f %f\n", pp[0],pp[1],pp[2])
+    #wp.printf("pp[%i]=%f %f %f\n", env_id, pp[0],pp[1],pp[2])
     out_rotations[env_id, env_shape_id] = wp.quat(qq[3], qq[0], qq[1], qq[2])
     out_positions[env_id, env_shape_id] = pp
 
@@ -42,11 +42,11 @@ class Simulator:
     def __init__(self, gpu_id, num_worlds, cpu_madrona, viz_gpu_hdls=None):
         # Initialize madrona simulator
         
-        CartpoleEnvironment.render_mode = RenderMode.NONE
+        #CartpoleEnvironment.render_mode = #RenderMode.NONE
         CartpoleEnvironment.num_envs = num_worlds
         CartpoleEnvironment.env_offset = (0.0, 0.0, 0.0)
-        self.env_cartpole = CartpoleEnvironment()
-        self.env_cartpole.init()
+        self.env_cartpole = CartpoleEnvironment(num_envs = num_worlds, env_offset = (0.0, 0.0, 0.0), render_mode = RenderMode.OPENGL)
+        #self.env_cartpole.init()
         self.env_cartpole.reset()
         
         
@@ -75,7 +75,9 @@ class Simulator:
 
         # Warp here
         self.env_cartpole.step()
-        self.env_cartpole.render()        
+        #wp.sim.eval_fk(self.env_cartpole.model, self.env_cartpole.state.joint_q, self.env_cartpole.state.joint_qd, None, self.env_cartpole.state)
+        self.env_cartpole.render()
+                
         #print("self.madrona.rigid_body_positions_tensor()=",self.madrona.rigid_body_positions_tensor())
         positions = wp.from_torch(self.madrona_rigid_body_positions, dtype=wp.vec3)
         orientations = wp.from_torch(self.madrona_rigid_body_rotations, dtype=wp.quatf)
@@ -87,6 +89,7 @@ class Simulator:
         #print("positions.shape=", positions.shape)
         #print("orientations=",orientations)
         
+        num_shapes_per_env = (self.env_cartpole.model.shape_count - 1) // self.env_cartpole.num_envs
         
         wp.launch(
           compute_transforms,
@@ -96,7 +99,7 @@ class Simulator:
               self.env_cartpole.model.shape_body,
               self.env_cartpole.model.shape_transform,
               self.env_cartpole.state.body_q,
-              (self.env_cartpole.model.shape_count - 1) // self.env_cartpole.num_envs,
+              num_shapes_per_env,
           ],
           outputs=[
               positions,
