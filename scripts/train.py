@@ -28,6 +28,13 @@ from time import time
 
 torch.manual_seed(0)
 
+@wp.kernel
+def apply_actions(
+    actions: wp.array(dtype=float),
+    act: wp.array(dtype=float),
+):
+    tid = wp.tid()
+    act[tid * 2] = actions[tid]
 
 @wp.kernel
 def eval_observations(
@@ -204,6 +211,13 @@ class MadWarpCartpoleCamera(VecEnv):
             Tuple[torch.Tensor, torch.Tensor, torch.Tensor, dict]:
                 A tuple containing the observations, rewards, dones and extra information (metrics).
         """
+        wp.launch(
+            apply_actions,
+            dim=self.num_envs,
+            inputs=[wp.from_torch(actions)],
+            outputs=[self.sim.env_cartpole.control.joint_act],
+        )
+        
         self.sim.step()
         # A tuple containing the observations, rewards, dones and extra information (metrics).
 
