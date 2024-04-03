@@ -325,14 +325,13 @@ def train():
 
     log_dir = "."
 
-    rl_device = "gpu"
+    rl_device = "cuda"
 
     train_cfg = MadWarpRobotCfgPPO()
     train_cfg_dict = class_to_dict(train_cfg)
-    train_cfg_dict["policy"]["class_name"] = "PPO"
+    train_cfg_dict["policy"]["class_name"] = "ActorCritic"
     train_cfg_dict["algorithm"]["class_name"] = "PPO"
-    
-    
+        
     num_envs = 100
     env = MadWarpCartpoleCamera(num_envs)  # warp_rls_cartpole_env.WarpCartpoleEnv()
 
