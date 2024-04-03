@@ -30,11 +30,11 @@ torch.manual_seed(0)
 
 @wp.kernel
 def apply_actions(
-    actions: wp.array(dtype=float),
+    actions: wp.array(dtype=float, ndim=2),
     act: wp.array(dtype=float),
 ):
     tid = wp.tid()
-    act[tid * 2] = actions[tid]
+    act[tid * 2] = actions[tid, 0]
 
 @wp.kernel
 def eval_observations(
