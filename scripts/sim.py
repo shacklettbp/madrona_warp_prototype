@@ -33,7 +33,7 @@ def compute_transforms(
                 return
     pp = wp.transform_get_translation(X_ws)
     qq = wp.transform_get_rotation(X_ws)
-    wp.printf("pp[%i]=%f %f %f\n", env_id, pp[0],pp[1],pp[2])
+    #wp.printf("pp[%i]=%f %f %f\n", env_id, pp[0],pp[1],pp[2])
     out_rotations[env_id, env_shape_id] = wp.quat(qq[3], qq[0], qq[1], qq[2])
     out_positions[env_id, env_shape_id] = pp
 
@@ -90,9 +90,7 @@ class Simulator:
         #print("orientations=",orientations)
         
         num_shapes_per_env = (self.env_cartpole.model.shape_count - 1) // self.env_cartpole.num_envs
-        print("self.env_cartpole.model.shape_count - 1=",self.env_cartpole.model.shape_count - 1)
-        print("self.env_cartpole.num_envs=",self.env_cartpole.num_envs)
-        print("num_shapes_per_env=",num_shapes_per_env)
+        
         wp.launch(
           compute_transforms,
           dim=self.env_cartpole.model.shape_count,

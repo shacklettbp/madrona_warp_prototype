@@ -34,7 +34,7 @@ class CartpoleEnvironment(Environment):
     activate_ground_plane = False
 
     show_joints = True
-    up_axis = "Z"
+    up_axis = "z"
 
     def create_articulation(self, builder):
         wp.sim.parse_urdf(
@@ -57,8 +57,8 @@ class CartpoleEnvironment(Environment):
 
         # joint initial positions
         builder.joint_q[-2:] = [0.0, 0.3]
-        # builder.gravity = [0.0, 0.0, -9.81]
-        # builder.up_vector = [0.0, 0.0, 1.0]
+        #builder.gravity = [0.0, 0.0, -9.81]
+        #builder.up_vector = [0.0, 0.0, 1.0]
 
 
 if __name__ == "__main__":
