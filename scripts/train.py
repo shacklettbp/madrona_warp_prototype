@@ -209,6 +209,8 @@ class MadWarpCartpoleCamera(VecEnv):
             Tuple[torch.Tensor, torch.Tensor, torch.Tensor, dict]:
                 A tuple containing the observations, rewards, dones and extra information (metrics).
         """
+        #apply control forces
+        
         self.sim.step()
         # A tuple containing the observations, rewards, dones and extra information (metrics).
 
@@ -218,7 +220,7 @@ class MadWarpCartpoleCamera(VecEnv):
             inputs=[
                 self.sim.env_cartpole.model.joint_q, #self.sim.env_cartpole.state.joint_q,
                 self.sim.env_cartpole.model.joint_qd, #self.sim.env_cartpole.state.joint_qd,
-                self.sim.env_cartpole.state.joint_act,#self.sim.env_cartpole.control.joint_act,
+                self.sim.env_cartpole.control.joint_act,#self.sim.env_cartpole.control.joint_act,
             ],
             outputs=[
                 wp.from_torch(self.rew_buf),
@@ -258,6 +260,11 @@ class BaseConfig:
 class MadWarpRobotCfgPPO(BaseConfig):
     seed = 1
     runner_class_name = "OnPolicyRunner"
+    num_steps_per_env = 24  # per iteration
+    save_interval = 50  # check for potential saves every this many iterations
+    empirical_normalization = False
+    experiment_name = "cartpole"
+    max_iterations = 1500  # number of policy updates
 
     class policy:
         init_noise_std = 1.0
@@ -287,12 +294,12 @@ class MadWarpRobotCfgPPO(BaseConfig):
     class runner:
         policy_class_name = "ActorCritic"
         algorithm_class_name = "PPO"
-        num_steps_per_env = 24  # per iteration
-        max_iterations = 1500  # number of policy updates
+        
+        
 
         # logging
-        save_interval = 50  # check for potential saves every this many iterations
-        experiment_name = "test"
+        
+        
         run_name = ""
         # load and resume
         resume = False
@@ -338,7 +345,7 @@ def train():
     ppo_runner = OnPolicyRunner(env, train_cfg_dict, log_dir, device=rl_device)
 
     ppo_runner.learn(
-        num_learning_iterations=ppo_runner.max_iterations, init_at_random_ep_len=True
+        num_learning_iterations=train_cfg.max_iterations, init_at_random_ep_len=True
     )
 
 
