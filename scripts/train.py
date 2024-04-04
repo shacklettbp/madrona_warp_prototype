@@ -28,6 +28,7 @@ from time import time
 
 torch.manual_seed(0)
 
+
 @wp.kernel
 def apply_actions(
     actions: wp.array(dtype=float, ndim=2),
@@ -35,6 +36,7 @@ def apply_actions(
 ):
     tid = wp.tid()
     act[tid * 2] = actions[tid, 0]
+
 
 @wp.kernel
 def eval_observations(
@@ -61,6 +63,10 @@ def eval_rewards(
     joint_q: wp.array(dtype=wp.float32),
     joint_qd: wp.array(dtype=wp.float32),
     joint_act: wp.array(dtype=wp.float32),
+    time_steps: wp.array(dtype=int),
+    max_episode_length: int,
+    initial_joint_q: wp.array(dtype=wp.float32),
+    initial_joint_qd: wp.array(dtype=wp.float32),
     # outputs
     rewards: wp.array(dtype=wp.float32),
     dones: wp.array(dtype=wp.bool),
@@ -75,10 +81,15 @@ def eval_rewards(
     c = angle_normalize(th) ** 2.0 + 0.1 * thdot**2.0 + (u * 1e-4) ** 2.0
 
     rewards[env_id] = -c
-    if wp.abs(th) > 0.2 or wp.abs(x) > 0.5:
+    if wp.abs(th) > 0.2 or wp.abs(x) > 0.5 or time_steps[env_id] >= max_episode_length:
         dones[env_id] = True
+        time_steps[env_id] = 0
+        for i in range(2):
+            joint_q[env_id * 2 + i] = initial_joint_q[env_id * 2 + i]
+            joint_qd[env_id * 2 + i] = initial_joint_qd[env_id * 2 + i]
     else:
         dones[env_id] = False
+        time_steps[env_id] = time_steps[env_id] + 1
 
 
 class MadWarpCartpoleCamera(VecEnv):
@@ -144,6 +155,9 @@ class MadWarpCartpoleCamera(VecEnv):
             self.num_envs, device=self.device, dtype=torch.long
         )
         self.done_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
+        self.time_step_buf = torch.zeros(
+            self.num_envs, device=self.device, dtype=torch.int32
+        )
 
         # if self.num_privileged_obs is not None:
         #     self.privileged_obs_buf = torch.zeros(self.num_envs, self.num_privileged_obs, device=self.device, dtype=torch.float)
@@ -165,8 +179,8 @@ class MadWarpCartpoleCamera(VecEnv):
             eval_observations,
             dim=self.num_envs,
             inputs=[
-                self.sim.env_cartpole.model.joint_q,#self.sim.env_cartpole.state.joint_q,
-                self.sim.env_cartpole.model.joint_qd,#self.sim.env_cartpole.state.joint_qd,
+                self.sim.env_cartpole.state.joint_q,
+                self.sim.env_cartpole.state.joint_qd,
             ],
             outputs=[wp.from_torch(self.obs_buf)],
         )
@@ -201,7 +215,7 @@ class MadWarpCartpoleCamera(VecEnv):
         # #print("state=",self.state)
         # return np.array(self.state), reward, done, {}
 
-        #self.sim.env_cartpole.reset()
+        # self.sim.env_cartpole.reset()
         return self.get_observations()
 
     def step(
@@ -222,7 +236,7 @@ class MadWarpCartpoleCamera(VecEnv):
             inputs=[wp.from_torch(actions)],
             outputs=[self.sim.env_cartpole.control.joint_act],
         )
-        
+
         self.sim.step()
         # A tuple containing the observations, rewards, dones and extra information (metrics).
 
@@ -230,9 +244,13 @@ class MadWarpCartpoleCamera(VecEnv):
             eval_rewards,
             dim=self.num_envs,
             inputs=[
-                self.sim.env_cartpole.model.joint_q, #self.sim.env_cartpole.state.joint_q,
-                self.sim.env_cartpole.model.joint_qd, #self.sim.env_cartpole.state.joint_qd,
-                self.sim.env_cartpole.control.joint_act,#self.sim.env_cartpole.control.joint_act,
+                self.sim.env_cartpole.state.joint_q,
+                self.sim.env_cartpole.state.joint_qd,
+                self.sim.env_cartpole.control.joint_act,
+                wp.from_torch(self.time_step_buf),
+                self.max_episode_length,
+                self.sim.env_cartpole.model.joint_q,
+                self.sim.env_cartpole.model.joint_qd,
             ],
             outputs=[
                 wp.from_torch(self.rew_buf),
@@ -306,12 +324,9 @@ class MadWarpRobotCfgPPO(BaseConfig):
     class runner:
         policy_class_name = "ActorCritic"
         algorithm_class_name = "PPO"
-        
-        
 
         # logging
-        
-        
+
         run_name = ""
         # load and resume
         resume = False
@@ -350,7 +365,7 @@ def train():
     train_cfg_dict = class_to_dict(train_cfg)
     train_cfg_dict["policy"]["class_name"] = "ActorCritic"
     train_cfg_dict["algorithm"]["class_name"] = "PPO"
-        
+
     num_envs = 100
     env = MadWarpCartpoleCamera(num_envs)  # warp_rls_cartpole_env.WarpCartpoleEnv()
 
