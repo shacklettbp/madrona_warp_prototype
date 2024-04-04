@@ -19,7 +19,7 @@ import math
 import warp as wp
 import warp.sim
 
-from .environment import Environment, run_env
+from .environment import Environment, run_env, IntegratorType
 
 
 class CartpoleEnvironment(Environment):
@@ -28,13 +28,15 @@ class CartpoleEnvironment(Environment):
     opengl_render_settings = dict(scaling=3.0)
     usd_render_settings = dict(scaling=100.0)
 
-    sim_substeps_euler = 32
+    sim_substeps_euler = 8
     sim_substeps_xpbd = 5
 
     activate_ground_plane = False
 
     show_joints = True
     up_axis = "z"
+
+    integrator_type = IntegratorType.FEATHERSTONE
 
     def create_articulation(self, builder):
         wp.sim.parse_urdf(
