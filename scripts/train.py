@@ -35,7 +35,7 @@ def apply_actions(
     act: wp.array(dtype=float),
 ):
     tid = wp.tid()
-    act[tid * 2] = actions[tid, 0]
+    act[tid * 2] = 1500.*actions[tid, 0]
 
 
 @wp.kernel
@@ -78,10 +78,11 @@ def eval_rewards(
     thdot = joint_qd[env_id * 2 + 1]
     u = joint_act[env_id * 2]
 
-    c = angle_normalize(th) ** 2.0 + 0.1 * thdot**2.0 + (u * 1e-4) ** 2.0
+    c = 10.*angle_normalize(th) ** 2.0 + 0.01 * thdot**2.0 + (u * 1e-6) ** 2.0
+        
 
-    rewards[env_id] = -c
-    if wp.abs(th) > 0.2 or wp.abs(x) > 0.5 or time_steps[env_id] >= max_episode_length:
+    if wp.abs(th) > 2. or wp.abs(x) > 12.5 or time_steps[env_id] >= max_episode_length:
+        #if wp.abs(th) > .4 or wp.abs(x) > 12.5 or time_steps[env_id] >= max_episode_length:
         dones[env_id] = True
         time_steps[env_id] = 0
         for i in range(2):
@@ -90,6 +91,9 @@ def eval_rewards(
     else:
         dones[env_id] = False
         time_steps[env_id] = time_steps[env_id] + 1
+        c+=1.0
+    
+    rewards[env_id] = -c
 
 
 class MadWarpCartpoleCamera(VecEnv):
@@ -141,7 +145,7 @@ class MadWarpCartpoleCamera(VecEnv):
         self.num_obs = 4  # pole, cart position, pole cart velocity
         self.num_actions = 1
         self.num_privileged_obs = 0
-        self.max_episode_length = 500
+        self.max_episode_length = 2000
         self.privileged_obs_buf = None
         self.device = "cuda"
 
@@ -238,8 +242,9 @@ class MadWarpCartpoleCamera(VecEnv):
         )
 
         self.sim.step()
+        
         # A tuple containing the observations, rewards, dones and extra information (metrics).
-
+        #print("self.sim.env_cartpole.state.joint_q=",self.sim.env_cartpole.state.joint_q)
         wp.launch(
             eval_rewards,
             dim=self.num_envs,
@@ -258,7 +263,8 @@ class MadWarpCartpoleCamera(VecEnv):
             ],
         )
         self.get_observations()
-
+        #print("self.done_buf=",self.done_buf)
+        #print("self.rew_buf=",self.rew_buf)
         return self.obs_buf, self.rew_buf, self.done_buf, self.extras
 
 
@@ -298,8 +304,8 @@ class MadWarpRobotCfgPPO(BaseConfig):
 
     class policy:
         init_noise_std = 1.0
-        actor_hidden_dims = [512, 256, 128]
-        critic_hidden_dims = [512, 256, 128]
+        actor_hidden_dims = [32, 32]
+        critic_hidden_dims = [32, 32]
         activation = "elu"  # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
         # only for 'ActorCriticRecurrent':
         # rnn_type = 'lstm'
@@ -311,7 +317,7 @@ class MadWarpRobotCfgPPO(BaseConfig):
         value_loss_coef = 1.0
         use_clipped_value_loss = True
         clip_param = 0.2
-        entropy_coef = 0.01
+        entropy_coef = 0.05
         num_learning_epochs = 5
         num_mini_batches = 4  # mini batch size = num_envs*nsteps / nminibatches
         learning_rate = 1.0e-3  # 5.e-4
@@ -374,6 +380,8 @@ def train():
     ppo_runner.learn(
         num_learning_iterations=train_cfg.max_iterations, init_at_random_ep_len=True
     )
+
+    
 
 
 if __name__ == "__main__":
