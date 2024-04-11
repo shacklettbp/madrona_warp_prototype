@@ -1,0 +1,79 @@
+params:  
+  seed: ${...seed}
+
+  algo:
+    name: a2c_continuous
+
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+    mlp:
+      units: [64, 64]
+      activation: tanh
+      d2rl: False
+      
+      initializer:
+        name: default
+      regularizer:
+        name: None
+
+  
+  load_checkpoint: ${if:${...checkpoint},True,False} # flag which sets whether to load the checkpoint
+  load_path: ${...checkpoint} # path to the checkpoint to load
+
+  config:
+    name: ${resolve_default:CartpolePPO,${....experiment}}
+    env_name: warp
+    multi_gpu: False
+    ppo: True
+    mixed_precision: True
+    normalize_input: True
+    normalize_value: True
+    value_bootstrap: True
+    reward_shaper:
+      scale_value: 1.0
+    normalize_advantage: True
+    gamma: 0.99
+    tau: 0.95
+    learning_rate: 3e-4
+    lr_schedule: adaptive
+    # lr_threshold: 0.008
+    kl_threshold: 0.008
+    score_to_win: 20000
+    max_epochs: ${resolve_default:200,${....max_iterations}}
+    save_best_after: 50
+    save_frequency: 50
+    grad_norm: 1.0
+    entropy_coef: 0.0
+    truncate_grads: True
+    e_clip: 0.2
+    # steps_num: 128
+    horizon_length: 64 #240
+    num_actors: 2048 #256
+    minibatch_size: 32768
+    mini_epochs: 4
+    critic_coef: 4
+    clip_value: True
+    seq_length: 8
+    bounds_loss_coef: 0.0001
+    
+    player:
+      # render: True
+      determenistic: True
+      games_num: 120000
+      #num_actors: 4
+      print_stats: True

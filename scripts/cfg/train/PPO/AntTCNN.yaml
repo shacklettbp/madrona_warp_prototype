@@ -1,0 +1,67 @@
+params:  
+
+  seed: ${...seed}
+
+  algo:
+    name: a2c_continuous
+
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: tcnnnet
+
+    encoding:
+      otype: "Identity"
+
+    network:
+      type: "FullyFusedMLP"
+      activation: "ReLU"
+      output_activation: "None"
+      n_neurons: 256
+      n_hidden_layers: 2
+      
+      initializer:
+        name: default
+      regularizer:
+        name: None
+
+  config:
+    name: ${resolve_default:AntWarpPPO_TCNN,${....experiment}}
+    env_name: warp
+    multi_gpu: False
+    ppo: True
+    mixed_precision: True
+    normalize_input: True
+    normalize_value: True
+    value_bootstrap: True
+    reward_shaper:
+      scale_value: 1.0
+    normalize_advantage: True
+    gamma: 0.99
+    tau: 0.95
+    learning_rate: 3e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+    score_to_win: 20000
+    max_epochs: ${resolve_default:500,${....max_iterations}}
+    save_best_after: 500
+    save_frequency: 100
+    grad_norm: 1.0
+    entropy_coef: 0.0
+    truncate_grads: True
+    e_clip: 0.2
+    num_actors: 4096
+    horizon_length: 16
+    minibatch_size: 32768
+    mini_epochs: 4
+    critic_coef: 4
+    clip_value: True
+    seq_len: 4
+    bounds_loss_coef: 0.0001
+    
+    player:
+      determenistic: True
+      games_num: 128 #6
+      num_actors: 128 #3
+      print_stats: True

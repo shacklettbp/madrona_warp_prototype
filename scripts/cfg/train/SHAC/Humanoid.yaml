@@ -1,0 +1,92 @@
+params:  
+  diff_env:
+    name: HumanoidEnv
+    stochastic_env: True
+    episode_length: 1000
+    MM_caching_frequency: 16
+
+  algo:
+    name: shac
+
+  model:
+    name: shac
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: -1
+        fixed_sigma: True
+    mlp:
+      units: [256, 128]
+      activation: elu
+      d2rl: False
+      normalization: layer_norm
+      initializer:
+        name: default
+      regularizer:
+        name: None
+
+  config:
+    name: DF_Humanoid_SHAC
+    env_name: dflex
+    multi_gpu: False
+
+    normalize_input: True
+    normalize_value: True
+    reward_shaper:
+      scale_value: 1.0
+    normalize_advantage: True
+    gamma: 0.99
+    tau: 0.95
+    learning_rate: 2e-3
+    critic_learning_rate: 5e-4
+    betas: [0.7, 0.95]
+    lr_schedule: linear
+    score_to_win: 20000
+    max_epochs: 2000
+    save_best_after: 100
+    save_frequency: 400
+    grad_norm: 1.0
+    entropy_coef: 0.0
+    truncate_grads: True
+    e_clip: 0.2
+    num_actors: 64
+    horizon_length: 32
+    minibatch_size: 1024
+    mini_epochs: 6
+    critic_coef: 2
+    clip_value: False
+    seq_length: 4
+    use_target_critic: True
+    target_critic_alpha: 0.995
+    critic_config:
+      model:
+        name: central_value
+      network:
+        name: actor_critic
+        central_value: True
+        separate: False
+        mlp:
+          units: [128, 128]
+          normalization: layer_norm
+          activation: elu
+          d2rl: False
+          
+          initializer:
+            name: default
+
+    player:
+      determenistic: True
+      games_num: 24
+      num_actors: 3
+      print_stats: True
+

@@ -1,0 +1,27 @@
+params:  
+  diff_env:
+    name: AntEnv
+    stochastic_env: False
+    
+  algo:
+    name: lbfgs # ['gd', 'lbfgs', 'adam', 'sgd']
+
+  config:
+    name: df_ant
+    env_name: dflex
+    # learning_rate: 1e-1 # gd
+    learning_rate: 5e-3 # adam
+    max_epochs: 300
+    grad_norm: 1.0
+    truncate_grads: True
+    num_actors: 1
+    # minibatch_size: 4096 #2048 #8192
+    
+    player:
+      # render: True
+      determenistic: False
+      # determenistic: False
+      # device_name: cpu
+      games_num: 12
+      num_actors: 1
+      print_stats: True

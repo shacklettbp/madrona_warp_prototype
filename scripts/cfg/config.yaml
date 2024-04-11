@@ -1,0 +1,43 @@
+# experiment name. defaults to name of training config
+experiment: ''
+
+# if set to positive integer, overrides the default number of environments
+num_envs: ''
+
+# seed - set to -1 to choose random seed
+seed: 42
+# set to True for deterministic performance
+torch_deterministic: False
+
+# set the maximum number of learning iterations to train for. overrides default per-environment setting
+max_iterations: ''
+
+## Device config
+# device for running physics simulation
+device: 'cuda'
+# # device to run RL -- TODO -- support
+# rl_device: 'cuda:0'
+
+# RLGames Arguments
+# test - if set, run policy in inference mode (requires setting checkpoint to load)
+test: False
+# used to set checkpoint path
+checkpoint: ''
+
+# disables saving USD to file
+visualize: True
+
+wandb_activate: False
+wandb_project: 'warp_sim'
+wandb_group: ''
+wandb_name: ${env.name}
+
+defaults:
+  - env: Cartpole
+  - train: PPO/${env}
+
+# set the directory where the output files get saved
+hydra:
+  output_subdir: null
+  run:
+    dir: .

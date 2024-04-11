@@ -1,0 +1,12 @@
+
+num_envs: [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768]
+#num_envs: [32768]
+env_time: 5.0 # seconds
+
+random_action: True
+
+defaults:
+  - config
+  - _self_
+  # ignored so just make sure we dont need a training config
+  - override train: 
