@@ -1,3 +1,4 @@
+import madrona_warp_proto_sim
 import hydra
 import os
 from omegaconf import DictConfig, OmegaConf

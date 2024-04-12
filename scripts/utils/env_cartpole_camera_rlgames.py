@@ -1,6 +1,6 @@
+from madrona_warp_proto_sim import SimManager, madrona
 import math
 from dataclasses import dataclass
-from madrona_warp_proto_sim import SimManager, madrona
 
 import numpy as np
 import nvtx
