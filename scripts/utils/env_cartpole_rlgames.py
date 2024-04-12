@@ -286,7 +286,7 @@ class Cartpole(WarpEnv):
             self.env_dist = 0.0  # set to zero for training for numerical consistency
 
         wp.sim.parse_urdf(
-            "assets/cartpole_dflex.urdf",
+            os.path.join(os.path.dirname(__file__), "../assets/cartpole_dflex.urdf"),
             self.articulation_builder,
             floating=False,
             density=1000.0,
