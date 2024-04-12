@@ -16,6 +16,7 @@ from hydra.core.config_store import ConfigStore
 #from rl_cartpole_rlgames import Cartpole, CartpoleConfig
 
 from .env_cartpole_rlgames import Cartpole, CartpoleConfig
+from .env_cartpole_camera_rlgames import CartpoleCamera, CartpoleCameraConfig
 
 #from warp_envs.envs.cartpole_client import CartpoleClient, CartpoleClientConfig
 #from warp_envs.envs.humanoid import Humanoid, HumanoidConfig
@@ -26,7 +27,8 @@ cs = ConfigStore.instance()
 #cs.store(name="AntClient", node=AntClientConfig, group="env")
 #cs.store(name="Humanoid", node=HumanoidConfig, group="env")
 #cs.store(name="HumanoidClient", node=HumanoidClientConfig, group="env")
-cs.store(name="Cartpole", node=CartpoleConfig, group="env")
+#cs.store(name="Cartpole", node=CartpoleConfig, group="env")
+cs.store(name="CartpoleCamera", node=CartpoleCameraConfig, group="env")
 #cs.store(name="CartpoleClient", node=CartpoleClientConfig, group="env")
 
 
@@ -54,7 +56,7 @@ def get_rlgames_env_creator(
         #env = getattr(envs, env_config['name'])(
         #    cfg=env_config,
         #)
-        env = Cartpole(cfg = env_config)
+        env = CartpoleCamera(cfg = env_config)
 
         if post_create_hook is not None:
             post_create_hook()

@@ -22,6 +22,7 @@ OmegaConf.register_new_resolver('if', lambda pred, a, b: a if pred else b)
 # num_ensv
 OmegaConf.register_new_resolver('resolve_default', lambda default, arg: default if arg=='' else arg)
 
+
 @hydra.main(config_name="config", config_path="./cfg")
 def launch_rlg_hydra(cfg: DictConfig):
     

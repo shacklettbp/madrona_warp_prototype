@@ -33,7 +33,7 @@ wandb_group: ''
 wandb_name: ${env.name}
 
 defaults:
-  - env: Cartpole
+  - env: CartpoleCamera
   - train: PPO/${env}
 
 # set the directory where the output files get saved
