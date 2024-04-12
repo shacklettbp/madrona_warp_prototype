@@ -6,3 +6,7 @@
 /scripts/__pycache__
 /scripts/warp_envs/__pycache__
 .history
+*.pth
+*.pyc
+events.out.tfevents.*
+*.log
