@@ -30,6 +30,46 @@ import torch
 import warp as wp
 from gym import spaces
 
+import warp as wp
+import math
+
+# initialize the Warp runtime
+# this function must be called before any other Warp API call.
+wp.config.mode = "release"
+wp.init()
+
+@wp.kernel
+def compute_transforms(
+    shape_body: wp.array(dtype=int),
+    shape_transforms: wp.array(dtype=wp.transform),
+    body_q: wp.array(dtype=wp.transform),
+    num_shapes_per_env: int,
+    # outputs
+    out_positions: wp.array(dtype=wp.vec3, ndim=2),
+    out_rotations: wp.array(dtype=wp.quat, ndim=2),
+):
+    tid = wp.tid()
+    i = shape_body[tid]
+    env_id = tid // num_shapes_per_env
+    #wp.printf("env_id=%i\n",env_id)
+
+    env_shape_id = tid % num_shapes_per_env
+    #wp.printf("env_shape_id=%i\n",env_shape_id)
+    X_ws = shape_transforms[i]
+    if shape_body:
+        body = shape_body[i]
+        if body >= 0:
+            if body_q:
+                X_ws = body_q[body] * X_ws
+            else:
+                return
+    pp = wp.transform_get_translation(X_ws)
+    qq = wp.transform_get_rotation(X_ws)
+    #wp.printf("pp[%i]=%f %f %f\n", env_id, pp[0],pp[1],pp[2])
+    out_rotations[env_id, env_shape_id] = wp.quat(qq[3], qq[0], qq[1], qq[2])
+    out_positions[env_id, env_shape_id] = pp
+
+
 
 @dataclass
 class WarpEnvConfig:
@@ -70,10 +110,32 @@ class WarpEnv(ABC):
         for k, v in cfg.items():
             setattr(self, k, v)
 
-        # initialize the Warp runtime
-        # this function must be called before any other Warp API call.
-        wp.config.mode = "release"
-        wp.init()
+        cpu_madrona = False
+        gpu_id = 0
+        viz_gpu_hdls = None
+
+        num_worlds = self.num_envs
+        self.madrona = SimManager(
+            exec_mode = madrona.ExecMode.CPU if cpu_madrona else madrona.ExecMode.CUDA,
+            gpu_id = gpu_id,
+            num_worlds = num_worlds,
+            max_episode_length = 500,
+            enable_batch_renderer = True,
+            batch_render_view_width = 64,
+            batch_render_view_height = 64,
+            visualizer_gpu_handles = viz_gpu_hdls,
+        )
+        self.madrona.init()
+        
+        self.depth = self.madrona.depth_tensor().to_torch()
+        self.rgb = self.madrona.rgb_tensor().to_torch()
+
+        self.madrona_rigid_body_positions = self.madrona.rigid_body_positions_tensor().to_torch()
+        self.madrona_rigid_body_rotations = self.madrona.rigid_body_rotations_tensor().to_torch()
+
+        self.step_idx = 0
+
+        #wp.init() moved to global at top of file
 
         self.integrator = wp.sim.XPBDIntegrator(
             iterations=self.solve_iterations,
@@ -132,7 +194,45 @@ class WarpEnv(ABC):
             # TODO - make clip range a parameter
             actions = torch.clip(actions, -1.0, 1.0)
 
+
+            self.madrona.process_actions()
+            
             self._simulate(actions)
+
+            positions = wp.from_torch(self.madrona_rigid_body_positions, dtype=wp.vec3)
+            orientations = wp.from_torch(self.madrona_rigid_body_rotations, dtype=wp.quatf)
+
+            num_shapes_per_env = (self.model.shape_count - 1) // self.num_envs
+        
+            wp.launch(
+            compute_transforms,
+            dim=self.model.shape_count,
+
+            inputs=[
+                self.model.shape_body,
+                self.model.shape_transform,
+                self.state_0.body_q,
+                num_shapes_per_env,
+            ],
+            outputs=[
+                positions,
+                orientations,
+            ],
+            )
+
+            #wp.synchronize()
+
+            #print("")
+            #print(positions)
+            #print(orientations)
+            #print("")
+
+            #print("positions=",positions)
+            #print("orientations=",orientations)
+
+            self.madrona.post_physics()
+
+            self.step_idx += 1
 
             # copy warp data to pytorch
             self.extras["time_outs"] = (wp.torch.to_torch(self.timeout_buf_wp).to(self.device)).squeeze(-1)
