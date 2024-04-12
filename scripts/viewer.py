@@ -1,5 +1,5 @@
-import torch
 from madrona_warp_proto_viz import VisualizerGPUState, Visualizer
+import torch
 from sim import Simulator
 
 import argparse

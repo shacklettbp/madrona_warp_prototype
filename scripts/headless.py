@@ -1,7 +1,9 @@
+import madrona_warp_proto_sim
 import torch
 from sim import Simulator
 import argparse
 from time import time
+from torchvision.utils import save_image
 
 torch.manual_seed(0)
 
@@ -20,6 +22,9 @@ start = time()
 
 for i in range(args.num_steps):
     sim.step()
+
+    save_image(sim.rgb[1, :, :, :3].permute(2, 0, 1).float() / 255, f"out_{i}.png")
+
 
 end = time()
 

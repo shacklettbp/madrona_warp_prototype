@@ -23,6 +23,7 @@ import random
 import xml.etree.ElementTree as ET
 from abc import ABC, abstractmethod
 from dataclasses import MISSING, dataclass
+from torchvision.utils import save_image
 
 import numpy as np
 import nvtx
@@ -237,6 +238,9 @@ class WarpEnv(ABC):
             # copy warp data to pytorch
             self.extras["time_outs"] = (wp.torch.to_torch(self.timeout_buf_wp).to(self.device)).squeeze(-1)
             self.obs_dict["obs"] = wp.torch.to_torch(self.obs_buf_wp).to(self.device)
+
+            print(self.rgb[1, :, :, :3].shape)
+            save_image(self.rgb[1, :, :, :3].permute(2, 0, 1).float() / 255, f"out_{self.step_idx}.png")
 
             rew_buf = (wp.torch.to_torch(self.rew_buf_wp).to(self.device)).squeeze(-1)
             reset_buf = (wp.torch.to_torch(self.reset_buf_wp).to(self.device)).squeeze(-1)
