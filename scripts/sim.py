@@ -12,6 +12,7 @@ def compute_transforms(
     shape_transforms: wp.array(dtype=wp.transform),
     body_q: wp.array(dtype=wp.transform),
     num_shapes_per_env: int,
+    start_pos_wp: wp.array(dtype=wp.vec3),
     # outputs
     out_positions: wp.array(dtype=wp.vec3, ndim=2),
     out_rotations: wp.array(dtype=wp.quat, ndim=2),
@@ -23,6 +24,12 @@ def compute_transforms(
 
     env_shape_id = tid % num_shapes_per_env
     #wp.printf("env_shape_id=%i\n",env_shape_id)
+    
+    rot = wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), wp.pi/2.0)
+    global_tf = wp.transform(wp.vec3(0.,0.,0.), rot)
+
+    env_shape_id = tid % num_shapes_per_env
+    #wp.printf("env_shape_id=%i\n",env_shape_id)
     X_ws = shape_transforms[i]
     if shape_body:
         body = shape_body[i]
@@ -31,7 +38,10 @@ def compute_transforms(
                 X_ws = body_q[body] * X_ws
             else:
                 return
-    pp = wp.transform_get_translation(X_ws)
+            
+    X_ws = global_tf * X_ws
+
+    pp = wp.transform_get_translation(X_ws) - wp.quat_rotate(rot, start_pos_wp[env_id])
     qq = wp.transform_get_rotation(X_ws)
     #wp.printf("pp[%i]=%f %f %f\n", env_id, pp[0],pp[1],pp[2])
     out_rotations[env_id, env_shape_id] = wp.quat(qq[3], qq[0], qq[1], qq[2])
@@ -45,7 +55,7 @@ class Simulator:
         #CartpoleEnvironment.render_mode = #RenderMode.NONE
         CartpoleEnvironment.num_envs = num_worlds
         CartpoleEnvironment.env_offset = (0.0, 0.0, 0.0)
-        self.env_cartpole = CartpoleEnvironment(num_envs = num_worlds, env_offset = (0.0, 0.0, 0.0), render_mode = RenderMode.OPENGL)
+        self.env_cartpole = CartpoleEnvironment(num_envs = num_worlds, env_offset = (5.0, 0.0, 5.0), render_mode = RenderMode.OPENGL)
         #self.env_cartpole.init()
         self.env_cartpole.reset()
         
@@ -62,6 +72,8 @@ class Simulator:
         )
         self.madrona.init()
         
+        self.start_pos_wp = wp.array(self.env_cartpole.env_offsets, dtype=wp.vec3)
+        #print("self.start_pos_wp=",self.start_pos_wp)
         self.depth = self.madrona.depth_tensor().to_torch()
         self.rgb = self.madrona.rgb_tensor().to_torch()
 
@@ -100,6 +112,7 @@ class Simulator:
               self.env_cartpole.model.shape_transform,
               self.env_cartpole.state.body_q,
               num_shapes_per_env,
+              self.start_pos_wp,
           ],
           outputs=[
               positions,

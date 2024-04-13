@@ -74,7 +74,7 @@ params:
     # lr_threshold: 0.008
     kl_threshold: 0.008
     score_to_win: 20000
-    max_epochs: ${resolve_default:200,${....max_iterations}}
+    max_epochs: ${resolve_default:20000,${....max_iterations}}
     save_best_after: 50
     save_frequency: 50
     grad_norm: 1.0
@@ -83,7 +83,7 @@ params:
     e_clip: 0.2
     # steps_num: 128
     horizon_length: 64 #240
-    num_actors: 2048 #256
+    num_actors: 1024 #256
     minibatch_size: 32768
     mini_epochs: 4
     critic_coef: 4

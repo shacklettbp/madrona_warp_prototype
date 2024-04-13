@@ -39,12 +39,14 @@ import math
 wp.config.mode = "release"
 wp.init()
 
+
 @wp.kernel
 def compute_transforms(
     shape_body: wp.array(dtype=int),
     shape_transforms: wp.array(dtype=wp.transform),
     body_q: wp.array(dtype=wp.transform),
     num_shapes_per_env: int,
+    start_pos_wp: wp.array(dtype=wp.vec3),
     # outputs
     out_positions: wp.array(dtype=wp.vec3, ndim=2),
     out_rotations: wp.array(dtype=wp.quat, ndim=2),
@@ -57,6 +59,13 @@ def compute_transforms(
     env_shape_id = tid % num_shapes_per_env
     #wp.printf("env_shape_id=%i\n",env_shape_id)
     X_ws = shape_transforms[i]
+
+    rot = wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), wp.pi/2.0)
+    global_tf = wp.transform(wp.vec3(0.,0.,0.), rot)
+
+    env_shape_id = tid % num_shapes_per_env
+    #wp.printf("env_shape_id=%i\n",env_shape_id)
+    X_ws = shape_transforms[i]
     if shape_body:
         body = shape_body[i]
         if body >= 0:
@@ -64,7 +73,10 @@ def compute_transforms(
                 X_ws = body_q[body] * X_ws
             else:
                 return
-    pp = wp.transform_get_translation(X_ws)
+            
+    X_ws = global_tf * X_ws
+    
+    pp = wp.transform_get_translation(X_ws) - wp.quat_rotate(rot, start_pos_wp[env_id])
     qq = wp.transform_get_rotation(X_ws)
     #wp.printf("pp[%i]=%f %f %f\n", env_id, pp[0],pp[1],pp[2])
     out_rotations[env_id, env_shape_id] = wp.quat(qq[3], qq[0], qq[1], qq[2])
@@ -231,6 +243,7 @@ class WarpEnv(ABC):
                 self.model.shape_transform,
                 self.state_0.body_q,
                 num_shapes_per_env,
+                self.start_pos_wp,
             ],
             outputs=[
                 positions,
@@ -259,11 +272,16 @@ class WarpEnv(ABC):
             
             #todo: copy
             #todo: pass the Madrona image buffer
+            self.madrona_obs_buf = self.rgb[:, :, :, :3].clone().float()/255.0
+            #self.obs_buf = torch.swapaxes(images, 1, 3).clone().float()/255.0
             self.obs_dict["obs"] = self.madrona_obs_buf
 
-            #print(self.rgb[1, :, :, :3].shape)
-            
+            #print("self.rgb[1, :, :, :3].shape)=",self.rgb[1, :, :, :3].shape)
+            #print(self.rgb.shape)
+            #print("self.madrona_obs_buf.shape=",self.madrona_obs_buf.shape)
             #save_image(self.rgb[1, :, :, :3].permute(2, 0, 1).float() / 255, f"out_{self.step_idx}.png")
+            
+            #save_image(sim.rgb[1, :, :, :3].permute(2, 0, 1).float() / 255, f"out_{i}.png")
 
             #print("self.rgb=",self.rgb)
             #print("self.rgb.shape=",self.rgb.shape)
@@ -418,7 +436,8 @@ class CartpoleCamera(WarpEnv):
             self.env_dist = 0.0  # set to zero for training for numerical consistency
 
         wp.sim.parse_urdf(
-            "assets/cartpole_dflex.urdf",
+            #"assets/cartpole_dflex.urdf",
+            "assets/cartpole_single.urdf",
             self.articulation_builder,
             floating=False,
             density=1000.0,
@@ -439,6 +458,7 @@ class CartpoleCamera(WarpEnv):
 
         if self.visualize:
             env_offsets = self.compute_env_offsets(env_offset=(6.0, 0.0, 2.0))
+            #env_offsets = self.compute_env_offsets(env_offset=(0.0, 0.0, 0.0))
 
         for i in range(self.num_envs):
 
