@@ -22,8 +22,7 @@ start = time()
 
 for i in range(args.num_steps):
     sim.step()
-
-    save_image(sim.rgb[1, :, :, :3].permute(2, 0, 1).float() / 255, f"out_{i}.png")
+    #save_image(sim.rgb[1, :, :, :3].permute(2, 0, 1).float() / 255, f"out_{i}.png")
 
 
 end = time()

@@ -116,14 +116,17 @@ class WarpEnv(ABC):
         viz_gpu_hdls = None
 
         num_worlds = self.num_envs
+        self.camera_width = 64
+        self.camera_height = 64
+
         self.madrona = SimManager(
             exec_mode = madrona.ExecMode.CPU if cpu_madrona else madrona.ExecMode.CUDA,
             gpu_id = gpu_id,
             num_worlds = num_worlds,
             max_episode_length = 500,
             enable_batch_renderer = True,
-            batch_render_view_width = 64,
-            batch_render_view_height = 64,
+            batch_render_view_width = self.camera_width,
+            batch_render_view_height = self.camera_height,
             visualizer_gpu_handles = viz_gpu_hdls,
         )
         self.madrona.init()
@@ -161,12 +164,26 @@ class WarpEnv(ABC):
         self.num_obs = num_obs
         self.num_acts = num_acts
 
-        self.obs_space = spaces.Box(np.ones(self.num_obs) * -np.Inf, np.ones(self.num_obs) * np.Inf)
+        #self.obs_space = spaces.Box(np.ones(self.num_obs) * -np.Inf, np.ones(self.num_obs) * np.Inf)
+        
+        self.obs_space = spaces.Box(
+            np.ones((self.camera_width, self.camera_height, 3), dtype=np.float32) * -np.Inf, 
+            np.ones((self.camera_width, self.camera_height, 3), dtype=np.float32) * np.Inf)
+
+        self.camera_image_stacked =1
+        self.camera_channels = 3
+        self.num_stacked_channels = self.camera_image_stacked*self.camera_channels
+        
+        self.madrona_obs_buf = torch.zeros(
+                (self.num_envs, self.camera_height, self.camera_width, self.num_stacked_channels), device=self.device, dtype=torch.float)
+            
+
         self.act_space = spaces.Box(np.ones(self.num_acts) * -1.0, np.ones(self.num_acts) * 1.0)
 
         # allocate buffers
         self.act_buf_wp = wp.zeros(self.num_envs * self.num_acts, dtype=float, device=self.device)
         self.obs_buf_wp = wp.zeros((self.num_envs, self.num_obs), dtype=float, device=self.device)
+
         self.rew_buf_wp = wp.zeros(self.num_envs, dtype=float, device=self.device)
         self.reset_buf_wp = wp.zeros(self.num_envs, dtype=wp.int32, device=self.device)
         self.timeout_buf_wp = wp.zeros(self.num_envs, dtype=wp.int32, device=self.device)
@@ -237,14 +254,22 @@ class WarpEnv(ABC):
 
             # copy warp data to pytorch
             self.extras["time_outs"] = (wp.torch.to_torch(self.timeout_buf_wp).to(self.device)).squeeze(-1)
-            self.obs_dict["obs"] = wp.torch.to_torch(self.obs_buf_wp).to(self.device)
+            
+            #self.obs_dict["obs"] = wp.torch.to_torch(self.obs_buf_wp).to(self.device)
+            
+            #todo: copy
+            #todo: pass the Madrona image buffer
+            self.obs_dict["obs"] = self.madrona_obs_buf
 
-            print(self.rgb[1, :, :, :3].shape)
-            save_image(self.rgb[1, :, :, :3].permute(2, 0, 1).float() / 255, f"out_{self.step_idx}.png")
+            #print(self.rgb[1, :, :, :3].shape)
+            
+            #save_image(self.rgb[1, :, :, :3].permute(2, 0, 1).float() / 255, f"out_{self.step_idx}.png")
 
+            #print("self.rgb=",self.rgb)
+            #print("self.rgb.shape=",self.rgb.shape)
             rew_buf = (wp.torch.to_torch(self.rew_buf_wp).to(self.device)).squeeze(-1)
             reset_buf = (wp.torch.to_torch(self.reset_buf_wp).to(self.device)).squeeze(-1)
-
+            
             return self.obs_dict, rew_buf, reset_buf, self.extras
 
     def get_state(self):
@@ -269,6 +294,7 @@ class WarpEnv(ABC):
             self.progress_buf[env_ids] = 0
 
             self.calculateObservations()
+            
 
         return self.obs_buf
 
@@ -366,6 +392,7 @@ class CartpoleCamera(WarpEnv):
 
         # -----------------------
         # set up Usd renderer
+        print("self.visualize=",self.visualize)
         if self.visualize:
             self.stage = "outputs/" + "CartpoleCameraWarp_NoCopy_" + str(self.num_envs) + ".usd"
 
@@ -622,7 +649,9 @@ class CartpoleCamera(WarpEnv):
             device=self.device,
         )
 
-        self.obs_dict["obs"] = to_torch(self.obs_buf_wp).view(self.num_envs, -1).to(self.device).clone()
+        #self.obs_dict["obs"] = to_torch(self.obs_buf_wp).view(self.num_envs, -1).to(self.device).clone()
+        self.obs_dict["obs"] = self.madrona_obs_buf.clone()
+        
         self.reset_buf_wp.fill_(0)
 
         return self.obs_dict
