@@ -8,6 +8,7 @@ import warp as wp
 import warp.sim
 import warp.sim.render
 from warp.torch import to_torch
+from torchvision.utils import save_image, make_grid
 
 #from warp_envs.assets import get_asset_path
 #from warp_envs.envs.base import WarpEnv, WarpEnvConfig
@@ -81,7 +82,6 @@ def compute_transforms(
     #wp.printf("pp[%i]=%f %f %f\n", env_id, pp[0],pp[1],pp[2])
     out_rotations[env_id, env_shape_id] = wp.quat(qq[3], qq[0], qq[1], qq[2])
     out_positions[env_id, env_shape_id] = pp
-
 
 
 @dataclass
@@ -272,16 +272,38 @@ class WarpEnv(ABC):
             
             #todo: copy
             #todo: pass the Madrona image buffer
-            self.madrona_obs_buf = self.rgb[:, :, :, :3].clone().float()/255.0
+            #self.madrona_obs_buf = self.rgb[:, :, :, :3].permute(2, 0, 1).float()/255.0
+
+            #self.madrona_obs_buf = self.rgb[:, :, :, :3].clone().float()/255.0
             #self.obs_buf = torch.swapaxes(images, 1, 3).clone().float()/255.0
-            self.obs_dict["obs"] = self.madrona_obs_buf
+            #self.obs_dict["obs"] = self.madrona_obs_buf
 
             #print("self.rgb[1, :, :, :3].shape)=",self.rgb[1, :, :, :3].shape)
             #print(self.rgb.shape)
             #print("self.madrona_obs_buf.shape=",self.madrona_obs_buf.shape)
-            #save_image(self.rgb[1, :, :, :3].permute(2, 0, 1).float() / 255, f"out_{self.step_idx}.png")
             
-            #save_image(sim.rgb[1, :, :, :3].permute(2, 0, 1).float() / 255, f"out_{i}.png")
+            debug_img = False
+            if debug_img:
+                
+                tmp_img = self.rgb[:, :, :, :3].float() / 255
+                tmp_img_swapped = torch.swapaxes(tmp_img, 1, 3).clone()
+                #self.obs_dict["obs"] = tmp_img_swapped.clone()
+                #print("tmp_img_swapped.shape=",tmp_img_swapped.shape)
+                save_image(make_grid(tmp_img_swapped,nrow=32), f"tiled_{self.step_idx}.png")
+                save_image(tmp_img_swapped[12, :, :, :], f"newimg_13_{self.step_idx}.png")
+
+            #print("self.madrona_obs_buf=",self.madrona_obs_buf)
+                        
+            self.madrona_obs_buf = self.rgb[:, :, :, :3].clone().float()/255.0
+            self.obs_dict["obs"] = self.madrona_obs_buf
+
+            #print("tmp_img.shape=",tmp_img.shape)
+            #save_image(self.rgb[12, :, :, :3].permute(2, 0, 1).float() / 255, f"img_13_{self.step_idx}.png")
+
+            #img = images/255
+            #save_image(make_grid(self.rgb[:, :, :, :3].permute(2, 0, 1).float() / 255, nrows = 2), 'cartpole_export.png')
+            
+            #save_image(self.rgb[1, :, :, :3].permute(2, 0, 1).float() / 255, f"out_{i}.png")
 
             #print("self.rgb=",self.rgb)
             #print("self.rgb.shape=",self.rgb.shape)
@@ -721,18 +743,26 @@ def calculate_reward(
     for i in range(num_act):
         action_mag_sq += actions[act_offset + i] ** 2.0
 
+    #reward = 1.0 - self.pole_pos * self.pole_pos - 0.01 * torch.abs(self.cart_vel) - 0.005 * torch.abs(self.pole_vel)
+    #reward = torch.where(torch.abs(self.cart_pos) > self._reset_dist, torch.ones_like(reward) * -2.0, reward)
+    #reward = torch.where(torch.abs(self.pole_pos) > np.pi / 2, torch.ones_like(reward) * -2.0, reward)
+
     rew_buf[tid] = (
-        # For now wp.pow is not working
-        # -wp.pow(theta, 2.) * pole_angle_penalty \
-        # -wp.pow(theta_dot, 2.) * pole_velocity_penalty \
-        # -wp.pow(x, 2.) * cart_position_penalty \
-        # -wp.pow(x_dot, 2.) * cart_velocity_penalty \
-        -theta * theta * pole_angle_penalty
-        - theta_dot * theta_dot * pole_velocity_penalty
-        #- x * x * cart_position_penalty
-        #- x_dot * x_dot * cart_velocity_penalty
-        - action_mag_sq * cart_action_penalty
+        1. - theta*theta - 0.01 * wp.abs(x_dot) - 0.005 * wp.abs(theta_dot)
     )
+    
+    #rew_buf[tid] = (
+    #    # For now wp.pow is not working
+    #    # -wp.pow(theta, 2.) * pole_angle_penalty \
+    #    # -wp.pow(theta_dot, 2.) * pole_velocity_penalty \
+    #    # -wp.pow(x, 2.) * cart_position_penalty \
+    #    # -wp.pow(x_dot, 2.) * cart_velocity_penalty \
+    #    -theta * theta * pole_angle_penalty
+    #    - theta_dot * theta_dot * pole_velocity_penalty
+    #    #- x * x * cart_position_penalty
+    #    #- x_dot * x_dot * cart_velocity_penalty
+    #    - action_mag_sq * cart_action_penalty
+    #)
 
     # reset agents
     if progress_buf[tid] >= max_episode_length:
