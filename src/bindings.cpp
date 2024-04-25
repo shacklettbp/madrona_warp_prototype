@@ -60,6 +60,8 @@ NB_MODULE(madrona_warp_proto_sim, m) {
         .def("done_tensor", &Manager::doneTensor)
         .def("action_tensor", &Manager::actionTensor)
         .def("reward_tensor", &Manager::rewardTensor)
+        .def("camera_positions_tensor", &Manager::cameraPositionsTensor)
+        .def("camera_rotations_tensor", &Manager::cameraRotationsTensor)
         .def("rigid_body_positions_tensor", &Manager::rigidBodyPositionsTensor)
         .def("rigid_body_rotations_tensor", &Manager::rigidBodyRotationsTensor)
         .def("joint_forces_tensor", &Manager::jointForcesTensor)

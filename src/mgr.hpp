@@ -60,6 +60,9 @@ public:
     MGR_EXPORT madrona::py::Tensor actionTensor() const;
     MGR_EXPORT madrona::py::Tensor rewardTensor() const;
 
+    MGR_EXPORT madrona::py::Tensor cameraPositionsTensor() const;
+    MGR_EXPORT madrona::py::Tensor cameraRotationsTensor() const;
+
     MGR_EXPORT madrona::py::Tensor rigidBodyPositionsTensor() const;
     MGR_EXPORT madrona::py::Tensor rigidBodyRotationsTensor() const;
     MGR_EXPORT madrona::py::Tensor jointForcesTensor() const;

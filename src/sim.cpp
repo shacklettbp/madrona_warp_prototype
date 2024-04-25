@@ -44,6 +44,12 @@ void Sim::registerTypes(ECSRegistry &registry, const Config &cfg)
         (uint32_t)ExportID::RigidBodyPositions);
     registry.exportColumn<RigidBody, Rotation>(
         (uint32_t)ExportID::RigidBodyRotations);
+
+    registry.exportColumn<Agent, Position>(
+        (uint32_t)ExportID::CameraPositions);
+    registry.exportColumn<Agent, Rotation>(
+        (uint32_t)ExportID::CameraRotations);
+
     registry.exportColumn<Joint, JointForce>(
         (uint32_t)ExportID::JointForces);
 }

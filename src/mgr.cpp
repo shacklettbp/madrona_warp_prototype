@@ -487,6 +487,26 @@ Tensor Manager::rewardTensor() const
                                });
 }
 
+Tensor Manager::cameraPositionsTensor() const
+{
+    return impl_->exportTensor(ExportID::CameraPositions,
+                               TensorElementType::Float32,
+                               {
+                                   impl_->cfg.numWorlds,
+                                   sizeof(Vector3) / sizeof(float),
+                               });
+}
+
+Tensor Manager::cameraRotationsTensor() const
+{
+    return impl_->exportTensor(ExportID::CameraRotations,
+                               TensorElementType::Float32,
+                               {
+                                   impl_->cfg.numWorlds,
+                                   sizeof(Quat) / sizeof(float),
+                               });
+}
+
 Tensor Manager::rigidBodyPositionsTensor() const
 {
     return impl_->exportTensor(ExportID::RigidBodyPositions,

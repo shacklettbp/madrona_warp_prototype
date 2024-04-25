@@ -19,6 +19,8 @@ enum class ExportID : uint32_t {
     AgentReward,
     RigidBodyPositions,
     RigidBodyRotations,
+    CameraPositions,
+    CameraRotations,
     JointForces,
     NumExports,
 };
